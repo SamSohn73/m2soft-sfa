@@ -225,10 +225,10 @@ export function Sidebar({
           )}
           <button
             onClick={() => setMenuOpen((v) => !v)}
-            className="w-full h-10 rounded-lg flex items-center gap-2 px-3 hover:bg-sidebar-hover transition text-sm"
+            className="h-10 w-10 rounded-lg flex items-center justify-center hover:bg-sidebar-hover transition"
+            aria-label="메뉴"
           >
             <Menu className="h-4 w-4" />
-            <span className="font-medium">메뉴</span>
           </button>
         </div>
       </aside>
