@@ -6,10 +6,23 @@
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-// @cloudflare/vite-plugin builds from this — wrangler.jsonc main alone is insufficient.
+// PORT/HOST 환경변수를 읽어 dev/preview 서버 포트를 고정합니다.
+// 예) PORT=4000 bun run dev
+const PORT = process.env.PORT ? Number(process.env.PORT) : undefined;
+const HOST = process.env.HOST ?? undefined;
+
 export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
+  },
+  vite: {
+    server: {
+      ...(PORT ? { port: PORT, strictPort: true } : {}),
+      ...(HOST ? { host: HOST } : {}),
+    },
+    preview: {
+      ...(PORT ? { port: PORT, strictPort: true } : {}),
+      ...(HOST ? { host: HOST } : {}),
+    },
   },
 });
