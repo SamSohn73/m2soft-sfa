@@ -29,6 +29,20 @@ type Props = {
   onClose: () => void;
 };
 
+function highlight(text: string, query: string) {
+  const q = query.trim();
+  if (!q) return text;
+  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return parts.map((part, i) =>
+    part.toLowerCase() === q.toLowerCase() ? (
+      <mark key={i} className="bg-[#39ff14] text-black rounded px-0.5">{part}</mark>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
+  );
+}
+
 export function Sidebar({
   selectedId,
   onSelect,
@@ -179,7 +193,7 @@ export function Sidebar({
                               className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left text-sm"
                             >
                               <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                              <span className="truncate">{p.name}</span>
+                              <span className="truncate">{highlight(p.name, query)}</span>
                             </button>
                             <button
                               onClick={(e) => {
