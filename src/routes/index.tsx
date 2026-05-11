@@ -1,26 +1,98 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { getPassword, isAuthed, setAuthed } from "@/lib/store";
+import { Lock } from "lucide-react";
 
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "M2SOFT Document Viewer — 로그인" },
+      { name: "description", content: "M2SOFT 문서 뷰어에 로그인하세요." },
+    ],
+  }),
+  component: LoginPage,
 });
 
-// IMPORTANT: Replace this placeholder. For sites with multiple pages (About, Services, Contact, etc.),
-// create separate route files (about.tsx, services.tsx, contact.tsx) — don't put all pages in this file.
-function PlaceholderIndex() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
-}
+function LoginPage() {
+  const navigate = useNavigate();
+  const [pwd, setPwd] = useState("");
+  const [err, setErr] = useState("");
+  const [shake, setShake] = useState(false);
 
-function Index() {
-  return <PlaceholderIndex />;
+  useEffect(() => {
+    if (isAuthed()) navigate({ to: "/main" });
+  }, [navigate]);
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwd === getPassword()) {
+      setAuthed(true);
+      navigate({ to: "/main" });
+    } else {
+      setErr("비밀번호가 올바르지 않습니다.");
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+    }
+  };
+
+  return (
+    <main className="min-h-screen w-full flex items-center justify-center bg-background relative overflow-hidden px-4">
+      <div
+        className="absolute inset-0 opacity-40 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(600px circle at 30% 20%, oklch(0.62 0.20 255 / 0.25), transparent 60%), radial-gradient(500px circle at 70% 80%, oklch(0.72 0.18 250 / 0.18), transparent 60%)",
+        }}
+      />
+      <form
+        onSubmit={onSubmit}
+        className={`relative z-10 w-full max-w-md rounded-2xl border border-border/60 bg-card/70 backdrop-blur-xl p-8 sm:p-10 glow-brand transition-transform ${
+          shake ? "animate-[shake_.4s]" : ""
+        }`}
+      >
+        <div className="flex flex-col items-center mb-8">
+          <div className="h-14 w-14 rounded-2xl gradient-brand flex items-center justify-center mb-4 shadow-lg">
+            <Lock className="h-6 w-6 text-primary-foreground" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            <span className="text-foreground">M2</span>
+            <span className="text-brand">SOFT</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">Document Viewer</p>
+        </div>
+
+        <label className="block">
+          <span className="sr-only">PASSWORD</span>
+          <input
+            type="password"
+            autoFocus
+            value={pwd}
+            onChange={(e) => {
+              setPwd(e.target.value);
+              setErr("");
+            }}
+            placeholder="PASSWORD"
+            className="w-full h-14 px-5 rounded-xl bg-input/60 border border-border text-foreground placeholder:text-muted-foreground/70 outline-none tracking-widest text-center text-lg focus:border-brand focus:ring-2 focus:ring-brand/40 transition"
+          />
+        </label>
+
+        {err && <p className="mt-3 text-sm text-destructive text-center">{err}</p>}
+
+        <button
+          type="submit"
+          className="mt-6 w-full h-12 rounded-xl gradient-brand text-primary-foreground font-semibold tracking-wide hover:opacity-90 active:scale-[.98] transition glow-brand"
+        >
+          LOGIN
+        </button>
+      </form>
+
+      <style>{`
+        @keyframes shake {
+          0%,100% { transform: translateX(0) }
+          25% { transform: translateX(-8px) }
+          75% { transform: translateX(8px) }
+        }
+      `}</style>
+    </main>
+  );
 }
