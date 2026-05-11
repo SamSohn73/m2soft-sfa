@@ -36,7 +36,7 @@ function highlight(text: string, query: string) {
   const parts = text.split(new RegExp(`(${escaped})`, "gi"));
   return parts.map((part, i) =>
     part.toLowerCase() === q.toLowerCase() ? (
-      <mark key={i} className="bg-[#39ff14] text-black rounded px-0.5">{part}</mark>
+      <mark key={i} className="bg-transparent text-[rgba(57,255,20,0.7)] font-semibold">{part}</mark>
     ) : (
       <span key={i}>{part}</span>
     ),
