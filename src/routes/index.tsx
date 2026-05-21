@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getPassword, isAuthed, setAuthed } from "@/lib/store";
+import { isAuthed, login } from "@/lib/store";
 import { Lock } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -18,20 +18,30 @@ function LoginPage() {
   const [pwd, setPwd] = useState("");
   const [err, setErr] = useState("");
   const [shake, setShake] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (isAuthed()) navigate({ to: "/main" });
   }, [navigate]);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pwd === getPassword()) {
-      setAuthed(true);
-      navigate({ to: "/main" });
-    } else {
-      setErr("비밀번호가 올바르지 않습니다.");
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
+    if (busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const ok = await login(pwd);
+      if (ok) {
+        navigate({ to: "/main" });
+      } else {
+        setErr("비밀번호가 올바르지 않습니다.");
+        setShake(true);
+        setTimeout(() => setShake(false), 500);
+      }
+    } catch {
+      setErr("백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해 주세요.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -80,9 +90,10 @@ function LoginPage() {
 
         <button
           type="submit"
+          disabled={busy}
           className="mt-6 w-full h-12 rounded-xl gradient-brand text-primary-foreground font-semibold tracking-wide hover:opacity-90 active:scale-[.98] transition glow-brand"
         >
-          LOGIN
+          {busy ? "확인 중..." : "LOGIN"}
         </button>
       </form>
 

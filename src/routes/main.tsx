@@ -30,11 +30,14 @@ function MainPage() {
 
   // Keep selected fresh / clear if deleted
   useEffect(() => {
+    if (!selected) return;
     const refresh = () => {
-      if (!selected) return;
-      const found = getPresentations().find((p) => p.id === selected.id);
-      if (!found) setSelected(null);
-      else setSelected(found);
+      getPresentations()
+        .then((list) => {
+          const found = list.find((p) => p.id === selected.id);
+          setSelected(found ?? null);
+        })
+        .catch(() => {});
     };
     window.addEventListener("m2:presentations", refresh);
     return () => window.removeEventListener("m2:presentations", refresh);

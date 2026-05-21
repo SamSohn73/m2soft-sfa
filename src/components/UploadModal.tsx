@@ -1,5 +1,10 @@
 import { useState, useRef } from "react";
-import { CATEGORIES, addPresentation, type Presentation, type SourceType } from "@/lib/store";
+import {
+  CATEGORIES,
+  addPresentationFile,
+  addPresentationUrl,
+  type SourceType,
+} from "@/lib/store";
 import { X, Upload, Link as LinkIcon, FileText } from "lucide-react";
 
 export function UploadModal({ onClose }: { onClose: () => void }) {
@@ -10,6 +15,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const pickFile = (f: File | null) => {
@@ -21,39 +27,18 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     if (!name.trim()) return;
     setBusy(true);
+    setErr("");
     try {
-      let pres: Presentation;
       if (mode === "file") {
         if (!file) return;
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const r = new FileReader();
-          r.onload = () => resolve(r.result as string);
-          r.onerror = reject;
-          r.readAsDataURL(file);
-        });
-        pres = {
-          id: crypto.randomUUID(),
-          name: name.trim(),
-          category,
-          sourceType: "file",
-          src: dataUrl,
-          mime: file.type,
-          fileName: file.name,
-          createdAt: Date.now(),
-        };
+        await addPresentationFile({ name: name.trim(), category, file });
       } else {
         if (!url.trim()) return;
-        pres = {
-          id: crypto.randomUUID(),
-          name: name.trim(),
-          category,
-          sourceType: "url",
-          src: url.trim(),
-          createdAt: Date.now(),
-        };
+        await addPresentationUrl({ name: name.trim(), category, url: url.trim() });
       }
-      addPresentation(pres);
       onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "등록에 실패했습니다.");
     } finally {
       setBusy(false);
     }
@@ -174,6 +159,10 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
             className="w-full h-11 px-3 rounded-lg bg-input border border-border text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/30 transition"
           />
         </label>
+
+        {err && (
+          <p className="mb-3 text-sm text-destructive">{err}</p>
+        )}
 
         <div className="flex gap-2 justify-end">
           <button

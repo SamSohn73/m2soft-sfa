@@ -60,13 +60,19 @@ export function Sidebar({
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    const refresh = () => setList(getPresentations());
+    let cancelled = false;
+    const refresh = () => {
+      getPresentations()
+        .then((items) => {
+          if (!cancelled) setList(items);
+        })
+        .catch((e) => console.error(e));
+    };
     refresh();
     window.addEventListener("m2:presentations", refresh);
-    window.addEventListener("storage", refresh);
     return () => {
+      cancelled = true;
       window.removeEventListener("m2:presentations", refresh);
-      window.removeEventListener("storage", refresh);
     };
   }, []);
 
@@ -198,7 +204,11 @@ export function Sidebar({
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (confirm(`"${p.name}"을(를) 삭제할까요?`)) removePresentation(p.id);
+                                if (confirm(`"${p.name}"을(를) 삭제할까요?`)) {
+                                  removePresentation(p.id).catch((err) =>
+                                    alert(err instanceof Error ? err.message : "삭제 실패"),
+                                  );
+                                }
                               }}
                               className="opacity-0 group-hover:opacity-100 h-7 w-7 grid place-items-center rounded hover:bg-destructive/20 hover:text-destructive transition"
                               aria-label="삭제"
