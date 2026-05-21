@@ -160,6 +160,10 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
           />
         </label>
 
+        {err && (
+          <p className="mb-3 text-sm text-destructive">{err}</p>
+        )}
+
         <div className="flex gap-2 justify-end">
           <button
             type="button"
