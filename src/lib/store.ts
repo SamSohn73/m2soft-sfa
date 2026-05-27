@@ -187,3 +187,18 @@ export async function removePresentation(id: string): Promise<void> {
   if (!res.ok) throw new Error(`삭제 실패 (${res.status})`);
   notify();
 }
+
+export async function renamePresentation(id: string, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("이름을 입력하세요.");
+  const res = await fetch(`${API_BASE}/api/presentations/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ name: trimmed }),
+  });
+  if (!res.ok) throw new Error(`이름 변경 실패 (${res.status})`);
+  notify();
+}
