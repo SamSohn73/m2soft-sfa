@@ -7,6 +7,7 @@ import {
   removePresentation,
   removeCategory,
   renameCategory,
+  renamePresentation,
   setAuthed,
   type Category,
   type Presentation,
@@ -73,6 +74,8 @@ export function Sidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
+  const [renameItemValue, setRenameItemValue] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +157,29 @@ export function Sidebar({
       setOpenCats((s) => ({ ...s, [created.key]: true }));
     } catch (e) {
       alert(e instanceof Error ? e.message : "메뉴 추가 실패");
+    }
+  };
+
+  const beginRenameItem = (p: Presentation) => {
+    setRenamingItemId(p.id);
+    setRenameItemValue(p.name);
+  };
+
+  const commitRenameItem = () => {
+    if (!renamingItemId) return;
+    const id = renamingItemId;
+    const value = renameItemValue;
+    setRenamingItemId(null);
+    renamePresentation(id, value).catch((err) =>
+      alert(err instanceof Error ? err.message : "이름 변경 실패"),
+    );
+  };
+
+  const handleRemoveItem = (p: Presentation) => {
+    if (confirm(`"${p.name}"을(를) 삭제할까요?`)) {
+      removePresentation(p.id).catch((err) =>
+        alert(err instanceof Error ? err.message : "삭제 실패"),
+      );
     }
   };
 
@@ -287,35 +313,69 @@ export function Sidebar({
                       const active = selectedId === p.id;
                       return (
                         <li key={p.id}>
-                          <div
-                            className={`group flex items-center gap-2 rounded-lg pr-1 transition ${
-                              active
-                                ? "bg-brand/15 text-brand"
-                                : "hover:bg-sidebar-hover text-sidebar-foreground"
-                            }`}
-                          >
-                            <button
-                              onClick={() => onSelect(p)}
-                              className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left text-sm"
-                            >
-                              <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                              <span className="truncate">{highlight(p.name, query)}</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (confirm(`"${p.name}"을(를) 삭제할까요?`)) {
-                                  removePresentation(p.id).catch((err) =>
-                                    alert(err instanceof Error ? err.message : "삭제 실패"),
-                                  );
-                                }
-                              }}
-                              className="opacity-0 group-hover:opacity-100 h-7 w-7 grid place-items-center rounded hover:bg-destructive/20 hover:text-destructive transition"
-                              aria-label="삭제"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                          <ContextMenu>
+                            <ContextMenuTrigger asChild>
+                              <div
+                                className={`group flex items-center gap-2 rounded-lg pr-1 transition ${
+                                  active
+                                    ? "bg-brand/15 text-brand"
+                                    : "hover:bg-sidebar-hover text-sidebar-foreground"
+                                }`}
+                              >
+                                {renamingItemId === p.id ? (
+                                  <div className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2">
+                                    <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                                    <input
+                                      autoFocus
+                                      value={renameItemValue}
+                                      onChange={(e) => setRenameItemValue(e.target.value)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onBlur={commitRenameItem}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          commitRenameItem();
+                                        } else if (e.key === "Escape") {
+                                          e.preventDefault();
+                                          setRenamingItemId(null);
+                                        }
+                                      }}
+                                      className="flex-1 h-6 px-1.5 rounded bg-input border border-brand text-sm outline-none"
+                                    />
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => onSelect(p)}
+                                    className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left text-sm"
+                                  >
+                                    <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                                    <span className="truncate">{highlight(p.name, query)}</span>
+                                  </button>
+                                )}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveItem(p);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 h-7 w-7 grid place-items-center rounded hover:bg-destructive/20 hover:text-destructive transition"
+                                  aria-label="삭제"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent className="w-40">
+                              <ContextMenuItem onClick={() => beginRenameItem(p)}>
+                                <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+                              </ContextMenuItem>
+                              <ContextMenuItem
+                                onClick={() => handleRemoveItem(p)}
+                                className="text-destructive focus:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" /> 삭제
+                              </ContextMenuItem>
+                            </ContextMenuContent>
+                          </ContextMenu>
                         </li>
                       );
                     })}

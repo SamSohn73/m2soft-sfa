@@ -201,6 +201,29 @@ app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
   }
 });
 
+app.patch("/api/presentations/:id", requirePassword, async (req, res) => {
+  try {
+    const { name } = req.body || {};
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ error: "name required" });
+    }
+    const trimmed = String(name).trim();
+    let updated = null;
+    await serialize(async () => {
+      const list = readAll();
+      const idx = list.findIndex((p) => p.id === req.params.id);
+      if (idx === -1) return;
+      list[idx] = { ...list[idx], name: trimmed };
+      updated = list[idx];
+      writeAll(list);
+    });
+    if (!updated) return res.status(404).json({ error: "not found" });
+    res.json(publicizeFileSrc(req, updated));
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
