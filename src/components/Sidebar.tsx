@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  CATEGORIES,
+  addCategory,
+  getCategories,
   getPresentations,
   removePresentation,
+  removeCategory,
+  renameCategory,
   setAuthed,
+  type Category,
   type Presentation,
 } from "@/lib/store";
 import {
@@ -18,7 +22,15 @@ import {
   X,
   FileText,
   Trash2,
+  Pencil,
+  FolderPlus,
 } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 type Props = {
   selectedId: string | null;
@@ -53,11 +65,14 @@ export function Sidebar({
 }: Props) {
   const navigate = useNavigate();
   const [list, setList] = useState<Presentation[]>([]);
+  const [cats, setCats] = useState<Category[]>(() => getCategories());
   const [query, setQuery] = useState("");
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(CATEGORIES.map((c) => [c.key, true])),
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(getCategories().map((c) => [c.key, true])),
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -76,22 +91,71 @@ export function Sidebar({
     };
   }, []);
 
+  useEffect(() => {
+    const refresh = () => {
+      const next = getCategories();
+      setCats(next);
+      setOpenCats((prev) => {
+        const merged = { ...prev };
+        for (const c of next) if (!(c.key in merged)) merged[c.key] = true;
+        return merged;
+      });
+    };
+    window.addEventListener("m2:categories", refresh);
+    return () => window.removeEventListener("m2:categories", refresh);
+  }, []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return list;
     return list.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
-        CATEGORIES.find((c) => c.key === p.category)?.label.toLowerCase().includes(q),
+        cats.find((c) => c.key === p.category)?.label.toLowerCase().includes(q),
     );
-  }, [list, query]);
+  }, [list, query, cats]);
 
   const grouped = useMemo(() => {
     const m: Record<string, Presentation[]> = {};
-    for (const c of CATEGORIES) m[c.key] = [];
+    for (const c of cats) m[c.key] = [];
     for (const p of filtered) (m[p.category] ??= []).push(p);
     return m;
-  }, [filtered]);
+  }, [filtered, cats]);
+
+  const beginRename = (c: Category) => {
+    setRenamingKey(c.key);
+    setRenameValue(c.label);
+  };
+
+  const commitRename = () => {
+    if (!renamingKey) return;
+    try {
+      renameCategory(renamingKey, renameValue);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "이름 변경 실패");
+    }
+    setRenamingKey(null);
+  };
+
+  const handleRemoveCategory = (c: Category) => {
+    const count = (grouped[c.key] ?? []).length;
+    const msg =
+      count > 0
+        ? `"${c.label}" 메뉴에 ${count}개의 자료가 있습니다. 메뉴를 삭제해도 자료는 남지만 보이지 않게 됩니다. 계속할까요?`
+        : `"${c.label}" 메뉴를 삭제할까요?`;
+    if (confirm(msg)) removeCategory(c.key);
+  };
+
+  const handleAddCategory = () => {
+    const label = prompt("추가할 메뉴 이름을 입력하세요");
+    if (!label) return;
+    try {
+      const created = addCategory(label);
+      setOpenCats((s) => ({ ...s, [created.key]: true }));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "메뉴 추가 실패");
+    }
+  };
 
   const logout = () => {
     setAuthed(false);
@@ -159,28 +223,64 @@ export function Sidebar({
         </div>
 
         {/* Nav */}
-        <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 space-y-0.5">
-          {CATEGORIES.map((c) => {
+        <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 flex flex-col">
+          <div className="space-y-0.5">
+            {cats.map((c) => {
             const items = grouped[c.key] ?? [];
             const isOpen = openCats[c.key];
             return (
               <div key={c.key}>
-                <button
-                  onClick={() => setOpenCats((s) => ({ ...s, [c.key]: !s[c.key] }))}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-sidebar-hover transition group"
-                >
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
-                  )}
-                  <span className="font-medium text-sm flex-1 text-left">{c.label}</span>
-                  {items.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
-                      {items.length}
-                    </span>
-                  )}
-                </button>
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
+                    <button
+                      onClick={() => setOpenCats((s) => ({ ...s, [c.key]: !s[c.key] }))}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-sidebar-hover transition group"
+                    >
+                      {isOpen ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
+                      )}
+                      {renamingKey === c.key ? (
+                        <input
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commitRename();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              setRenamingKey(null);
+                            }
+                          }}
+                          className="flex-1 h-6 px-1.5 rounded bg-input border border-brand text-sm outline-none"
+                        />
+                      ) : (
+                        <span className="font-medium text-sm flex-1 text-left">{c.label}</span>
+                      )}
+                      {items.length > 0 && renamingKey !== c.key && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
+                          {items.length}
+                        </span>
+                      )}
+                    </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="w-40">
+                    <ContextMenuItem onClick={() => beginRename(c)}>
+                      <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onClick={() => handleRemoveCategory(c)}
+                      className="text-destructive focus:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" /> 삭제
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
                 {isOpen && items.length > 0 && (
                   <ul className="ml-3 pl-3 border-l border-border/60 space-y-0.5 mt-0.5 mb-1">
                     {items.map((p) => {
@@ -223,7 +323,18 @@ export function Sidebar({
                 )}
               </div>
             );
-          })}
+            })}
+          </div>
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div className="flex-1 min-h-[80px]" />
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-40">
+              <ContextMenuItem onClick={handleAddCategory}>
+                <FolderPlus className="h-4 w-4 mr-2 text-brand" /> 메뉴추가
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
         </nav>
 
         {/* Footer hamburger */}

@@ -1,15 +1,27 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  CATEGORIES,
   addPresentationFile,
   addPresentationUrl,
+  getCategories,
+  type Category,
   type SourceType,
 } from "@/lib/store";
 import { X, Upload, Link as LinkIcon, FileText } from "lucide-react";
 
 export function UploadModal({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<SourceType>("file");
-  const [category, setCategory] = useState<string>(CATEGORIES[0].key);
+  const [cats, setCats] = useState<Category[]>(() => getCategories());
+  const [category, setCategory] = useState<string>(() => getCategories()[0]?.key ?? "");
+
+  useEffect(() => {
+    const refresh = () => {
+      const next = getCategories();
+      setCats(next);
+      setCategory((cur) => (next.some((c) => c.key === cur) ? cur : next[0]?.key ?? ""));
+    };
+    window.addEventListener("m2:categories", refresh);
+    return () => window.removeEventListener("m2:categories", refresh);
+  }, []);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -141,7 +153,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setCategory(e.target.value)}
             className="w-full h-11 px-3 rounded-lg bg-input border border-border text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/30 transition"
           >
-            {CATEGORIES.map((c) => (
+            {cats.map((c) => (
               <option key={c.key} value={c.key}>
                 {c.label}
               </option>
