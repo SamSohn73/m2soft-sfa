@@ -23,6 +23,59 @@ export const CATEGORIES = [
 
 export type CategoryKey = (typeof CATEGORIES)[number]["key"];
 
+export type Category = { key: string; label: string };
+
+const CATS_KEY = "m2_categories";
+
+function readCats(): Category[] {
+  if (!isBrowser()) return CATEGORIES.map((c) => ({ ...c }));
+  try {
+    const raw = localStorage.getItem(CATS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Category[];
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return CATEGORIES.map((c) => ({ ...c }));
+}
+
+function writeCats(cats: Category[]) {
+  if (!isBrowser()) return;
+  localStorage.setItem(CATS_KEY, JSON.stringify(cats));
+  window.dispatchEvent(new Event("m2:categories"));
+}
+
+export function getCategories(): Category[] {
+  return readCats();
+}
+
+export function addCategory(label: string): Category {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("메뉴 이름을 입력하세요.");
+  const cats = readCats();
+  if (cats.some((c) => c.label === trimmed)) throw new Error("같은 이름의 메뉴가 이미 있습니다.");
+  const key = `cat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const next: Category = { key, label: trimmed };
+  writeCats([...cats, next]);
+  return next;
+}
+
+export function renameCategory(key: string, label: string): void {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("메뉴 이름을 입력하세요.");
+  const cats = readCats();
+  if (cats.some((c) => c.key !== key && c.label === trimmed))
+    throw new Error("같은 이름의 메뉴가 이미 있습니다.");
+  writeCats(cats.map((c) => (c.key === key ? { ...c, label: trimmed } : c)));
+}
+
+export function removeCategory(key: string): void {
+  const cats = readCats().filter((c) => c.key !== key);
+  writeCats(cats);
+}
+
 const PWD_KEY = "m2_pwd";
 const AUTH_KEY = "m2_auth";
 
