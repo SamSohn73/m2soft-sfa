@@ -323,15 +323,19 @@ export function Sidebar({
                 )}
               </div>
             );
-              })}
-            </nav>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-40">
-            <ContextMenuItem onClick={handleAddCategory}>
-              <FolderPlus className="h-4 w-4 mr-2 text-brand" /> 메뉴추가
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+            })}
+          </div>
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div className="flex-1 min-h-[80px]" />
+            </ContextMenuTrigger>
+            <ContextMenuContent className="w-40">
+              <ContextMenuItem onClick={handleAddCategory}>
+                <FolderPlus className="h-4 w-4 mr-2 text-brand" /> 메뉴추가
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        </nav>
 
         {/* Footer hamburger */}
         <div className="relative border-t border-border p-3">
