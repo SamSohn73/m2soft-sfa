@@ -352,16 +352,6 @@ export function Sidebar({
                                     <span className="truncate">{highlight(p.name, query)}</span>
                                   </button>
                                 )}
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveItem(p);
-                                  }}
-                                  className="opacity-0 group-hover:opacity-100 h-7 w-7 grid place-items-center rounded hover:bg-destructive/20 hover:text-destructive transition"
-                                  aria-label="삭제"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
                               </div>
                             </ContextMenuTrigger>
                             <ContextMenuContent className="w-40">
