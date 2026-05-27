@@ -223,10 +223,9 @@ export function Sidebar({
         </div>
 
         {/* Nav */}
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 space-y-0.5">
-              {cats.map((c) => {
+        <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 flex flex-col">
+          <div className="space-y-0.5">
+            {cats.map((c) => {
             const items = grouped[c.key] ?? [];
             const isOpen = openCats[c.key];
             return (
