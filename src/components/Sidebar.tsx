@@ -15,25 +15,13 @@ import {
   type Presentation,
 } from "@/lib/store";
 import {
-  Plus,
-  Search,
-  Menu,
-  ChevronDown,
-  ChevronRight,
-  KeyRound,
-  LogOut,
-  X,
-  FileText,
-  Trash2,
-  Pencil,
-  FolderPlus,
-  PanelLeftClose,
+  Plus, Search, Menu, ChevronDown, ChevronRight,
+  KeyRound, LogOut, X, FileText, Trash2, Pencil,
+  FolderPlus, PanelLeftClose,
 } from "lucide-react";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
+  ContextMenu, ContextMenuContent,
+  ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 
 type Props = {
@@ -62,35 +50,26 @@ function highlight(text: string, query: string) {
 }
 
 export function Sidebar({
-  selectedId,
-  onSelect,
-  onOpenUpload,
-  onOpenPassword,
-  open,
-  onClose,
-  collapsed = false,
-  onToggleCollapse,
+  selectedId, onSelect, onOpenUpload, onOpenPassword,
+  open, onClose, collapsed = false, onToggleCollapse,
 }: Props) {
   const navigate = useNavigate();
   const [list, setList] = useState<Presentation[]>([]);
-  const [cats, setCats] = useState<Category[]>(() => getCategories());
+  const [cats, setCats] = useState<Category[]>([]);
   const [query, setQuery] = useState("");
-  const [openCats, setOpenCats] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(getCategories().map((c) => [c.key, true])),
-  );
+  const [openCats, setOpenCats] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const [renameItemValue, setRenameItemValue] = useState("");
 
+  // 자료 목록 로드
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
       getPresentations()
-        .then((items) => {
-          if (!cancelled) setList(items);
-        })
+        .then((items) => { if (!cancelled) setList(items); })
         .catch((e) => console.error(e));
     };
     refresh();
@@ -101,18 +80,29 @@ export function Sidebar({
     };
   }, []);
 
+  // 카테고리 로드 (백엔드 API)
   useEffect(() => {
+    let cancelled = false;
     const refresh = () => {
-      const next = getCategories();
-      setCats(next);
-      setOpenCats((prev) => {
-        const merged = { ...prev };
-        for (const c of next) if (!(c.key in merged)) merged[c.key] = true;
-        return merged;
-      });
+      getCategories()
+        .then((next) => {
+          if (!cancelled) {
+            setCats(next);
+            setOpenCats((prev) => {
+              const merged = { ...prev };
+              for (const c of next) if (!(c.key in merged)) merged[c.key] = true;
+              return merged;
+            });
+          }
+        })
+        .catch((e) => console.error(e));
     };
+    refresh();
     window.addEventListener("m2:categories", refresh);
-    return () => window.removeEventListener("m2:categories", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("m2:categories", refresh);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -139,12 +129,12 @@ export function Sidebar({
 
   const commitRename = () => {
     if (!renamingKey) return;
-    try {
-      renameCategory(renamingKey, renameValue);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "이름 변경 실패");
-    }
+    const key = renamingKey;
+    const value = renameValue;
     setRenamingKey(null);
+    renameCategory(key, value).catch((e) =>
+      alert(e instanceof Error ? e.message : "이름 변경 실패"),
+    );
   };
 
   const handleRemoveCategory = (c: Category) => {
@@ -153,18 +143,19 @@ export function Sidebar({
       count > 0
         ? `"${c.label}" 메뉴에 ${count}개의 자료가 있습니다. 메뉴를 삭제해도 자료는 남지만 보이지 않게 됩니다. 계속할까요?`
         : `"${c.label}" 메뉴를 삭제할까요?`;
-    if (confirm(msg)) removeCategory(c.key);
+    if (confirm(msg)) {
+      removeCategory(c.key).catch((e) =>
+        alert(e instanceof Error ? e.message : "메뉴 삭제 실패"),
+      );
+    }
   };
 
   const handleAddCategory = () => {
     const label = prompt("추가할 메뉴 이름을 입력하세요");
     if (!label) return;
-    try {
-      const created = addCategory(label);
-      setOpenCats((s) => ({ ...s, [created.key]: true }));
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "메뉴 추가 실패");
-    }
+    addCategory(label)
+      .then((created) => setOpenCats((s) => ({ ...s, [created.key]: true })))
+      .catch((e) => alert(e instanceof Error ? e.message : "메뉴 추가 실패"));
   };
 
   const beginRenameItem = (p: Presentation) => {
@@ -197,7 +188,6 @@ export function Sidebar({
 
   return (
     <>
-      {/* Overlay (mobile) */}
       {open && (
         <div
           onClick={onClose}
@@ -206,10 +196,14 @@ export function Sidebar({
       )}
 
       <aside
-        className={`fixed lg:static z-40 inset-y-0 left-0 w-[280px] bg-sidebar text-sidebar-foreground border-r border-border flex flex-col
-        transition-all duration-300 ease-out
-        ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
-        ${collapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0" : ""}`}
+        className={[
+          "fixed lg:static z-40 inset-y-0 left-0 w-[280px]",
+          "bg-sidebar text-sidebar-foreground border-r border-border flex flex-col",
+          "transition-all duration-300 ease-out",
+          open ? "translate-x-0" : "-translate-x-full",
+          "lg:translate-x-0",
+          collapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0" : "",
+        ].join(" ")}
       >
         {/* Logo */}
         <div className="px-5 pt-5 pb-4 flex items-center justify-between">
@@ -234,7 +228,8 @@ export function Sidebar({
           </div>
           <button
             onClick={onClose}
-            className="lg:hidden h-8 w-8 grid place-items-center rounded-lg hover:bg-sidebar-hover transition">
+            className="lg:hidden h-8 w-8 grid place-items-center rounded-lg hover:bg-sidebar-hover transition"
+          >
             <X className="h-4 w-4" />
           </button>
           <button
@@ -273,127 +268,114 @@ export function Sidebar({
         <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 flex flex-col">
           <div className="space-y-0.5">
             {cats.map((c) => {
-            const items = grouped[c.key] ?? [];
-            const isOpen = openCats[c.key];
-            return (
-              <div key={c.key}>
-                <ContextMenu>
-                  <ContextMenuTrigger asChild>
-                    <button
-                      onClick={() => setOpenCats((s) => ({ ...s, [c.key]: !s[c.key] }))}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-sidebar-hover transition group"
-                    >
-                      {isOpen ? (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
-                      )}
-                      {renamingKey === c.key ? (
-                        <input
-                          autoFocus
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          onBlur={commitRename}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              commitRename();
-                            } else if (e.key === "Escape") {
-                              e.preventDefault();
-                              setRenamingKey(null);
-                            }
-                          }}
-                          className="flex-1 h-6 px-1.5 rounded bg-input border border-brand text-sm outline-none"
-                        />
-                      ) : (
-                        <span className="font-medium text-sm flex-1 text-left">{c.label}</span>
-                      )}
-                      {items.length > 0 && renamingKey !== c.key && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
-                          {items.length}
-                        </span>
-                      )}
-                    </button>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent className="w-40">
-                    <ContextMenuItem onClick={() => beginRename(c)}>
-                      <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      onClick={() => handleRemoveCategory(c)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" /> 삭제
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-                {isOpen && items.length > 0 && (
-                  <ul className="ml-3 pl-3 border-l border-border/60 space-y-0.5 mt-0.5 mb-1">
-                    {items.map((p) => {
-                      const active = selectedId === p.id;
-                      return (
-                        <li key={p.id}>
-                          <ContextMenu>
-                            <ContextMenuTrigger asChild>
-                              <div
-                                className={`group flex items-center gap-2 rounded-lg pr-1 transition ${
-                                  active
-                                    ? "bg-brand/15 text-brand"
-                                    : "hover:bg-sidebar-hover text-sidebar-foreground"
-                                }`}
-                              >
-                                {renamingItemId === p.id ? (
-                                  <div className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2">
-                                    <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                                    <input
-                                      autoFocus
-                                      value={renameItemValue}
-                                      onChange={(e) => setRenameItemValue(e.target.value)}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onBlur={commitRenameItem}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          commitRenameItem();
-                                        } else if (e.key === "Escape") {
-                                          e.preventDefault();
-                                          setRenamingItemId(null);
-                                        }
-                                      }}
-                                      className="flex-1 h-6 px-1.5 rounded bg-input border border-brand text-sm outline-none"
-                                    />
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => onSelect(p)}
-                                    className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left text-sm"
-                                  >
-                                    <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                                    <span className="truncate">{highlight(p.name, query)}</span>
-                                  </button>
-                                )}
-                              </div>
-                            </ContextMenuTrigger>
-                            <ContextMenuContent className="w-40">
-                              <ContextMenuItem onClick={() => beginRenameItem(p)}>
-                                <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
-                              </ContextMenuItem>
-                              <ContextMenuItem
-                                onClick={() => handleRemoveItem(p)}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" /> 삭제
-                              </ContextMenuItem>
-                            </ContextMenuContent>
-                          </ContextMenu>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            );
+              const items = grouped[c.key] ?? [];
+              const isOpen = openCats[c.key];
+              return (
+                <div key={c.key}>
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                      <button
+                        onClick={() => setOpenCats((s) => ({ ...s, [c.key]: !s[c.key] }))}
+                        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-sidebar-hover transition group"
+                      >
+                        {isOpen ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
+                        )}
+                        {renamingKey === c.key ? (
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={commitRename}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+                              else if (e.key === "Escape") { e.preventDefault(); setRenamingKey(null); }
+                            }}
+                            className="flex-1 h-6 px-1.5 rounded bg-input border border-brand text-sm outline-none"
+                          />
+                        ) : (
+                          <span className="font-medium text-sm flex-1 text-left">{c.label}</span>
+                        )}
+                        {items.length > 0 && renamingKey !== c.key && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
+                            {items.length}
+                          </span>
+                        )}
+                      </button>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-40">
+                      <ContextMenuItem onClick={() => beginRename(c)}>
+                        <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => handleRemoveCategory(c)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" /> 삭제
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                  {isOpen && items.length > 0 && (
+                    <ul className="ml-3 pl-3 border-l border-border/60 space-y-0.5 mt-0.5 mb-1">
+                      {items.map((p) => {
+                        const active = selectedId === p.id;
+                        return (
+                          <li key={p.id}>
+                            <ContextMenu>
+                              <ContextMenuTrigger asChild>
+                                <div className={[
+                                  "group flex items-center gap-2 rounded-lg pr-1 transition",
+                                  active ? "bg-brand/15 text-brand" : "hover:bg-sidebar-hover text-sidebar-foreground",
+                                ].join(" ")}>
+                                  {renamingItemId === p.id ? (
+                                    <div className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2">
+                                      <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                                      <input
+                                        autoFocus
+                                        value={renameItemValue}
+                                        onChange={(e) => setRenameItemValue(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onBlur={commitRenameItem}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") { e.preventDefault(); commitRenameItem(); }
+                                          else if (e.key === "Escape") { e.preventDefault(); setRenamingItemId(null); }
+                                        }}
+                                        className="flex-1 h-6 px-1.5 rounded bg-input border border-brand text-sm outline-none"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => onSelect(p)}
+                                      className="flex-1 min-w-0 flex items-center gap-2 px-2.5 py-2 text-left text-sm"
+                                    >
+                                      <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                                      <span className="truncate">{highlight(p.name, query)}</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </ContextMenuTrigger>
+                              <ContextMenuContent className="w-40">
+                                <ContextMenuItem onClick={() => beginRenameItem(p)}>
+                                  <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onClick={() => handleRemoveItem(p)}
+                                  className="text-destructive focus:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" /> 삭제
+                                </ContextMenuItem>
+                              </ContextMenuContent>
+                            </ContextMenu>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
             })}
           </div>
           <ContextMenu>
@@ -408,15 +390,12 @@ export function Sidebar({
           </ContextMenu>
         </nav>
 
-        {/* Footer hamburger */}
+        {/* Footer */}
         <div className="relative border-t border-border p-3">
           {menuOpen && (
             <div className="absolute bottom-full left-3 right-3 mb-2 rounded-xl bg-popover border border-border shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
               <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onOpenPassword();
-                }}
+                onClick={() => { setMenuOpen(false); onOpenPassword(); }}
                 className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm"
               >
                 <KeyRound className="h-4 w-4 text-brand" /> 비밀번호 변경

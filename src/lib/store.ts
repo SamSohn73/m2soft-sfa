@@ -1,4 +1,3 @@
-// Backend-backed store. CSV + 파일은 사내 백엔드(backend/) 가 관리합니다.
 export type SourceType = "file" | "url";
 export type Team = "sales" | "eng";
 
@@ -12,91 +11,14 @@ export type Presentation = {
   name: string;
   category: string;
   sourceType: SourceType;
-  src: string; // file: 백엔드 HTTP URL, url: 원본 URL
+  src: string;
   mime?: string;
   fileName?: string;
   createdAt: number;
   team?: Team;
 };
 
-export const CATEGORIES = [
-  { key: "company", label: "회사소개" },
-  { key: "strategy", label: "전략기획" },
-  { key: "product", label: "제품기획" },
-  { key: "sales", label: "영업자료" },
-  { key: "reference", label: "참고자료" },
-  { key: "education", label: "교육자료" },
-] as const;
-
-export type CategoryKey = (typeof CATEGORIES)[number]["key"];
-
 export type Category = { key: string; label: string };
-
-const CATS_KEY_BASE = "m2_categories";
-const LEGACY_CATS_KEY = "m2_categories";
-
-function catsKey(): string {
-  const t = getTeam();
-  return t ? `${CATS_KEY_BASE}_${t}` : CATS_KEY_BASE;
-}
-
-function readCats(): Category[] {
-  if (!isBrowser()) return CATEGORIES.map((c) => ({ ...c }));
-  try {
-    const key = catsKey();
-    let raw = localStorage.getItem(key);
-    // One-time migration from the pre-team key to the per-team key.
-    if (!raw && key !== LEGACY_CATS_KEY) {
-      const legacy = localStorage.getItem(LEGACY_CATS_KEY);
-      if (legacy) {
-        localStorage.setItem(key, legacy);
-        raw = legacy;
-      }
-    }
-    if (raw) {
-      const parsed = JSON.parse(raw) as Category[];
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {
-    /* ignore */
-  }
-  return CATEGORIES.map((c) => ({ ...c }));
-}
-
-function writeCats(cats: Category[]) {
-  if (!isBrowser()) return;
-  localStorage.setItem(catsKey(), JSON.stringify(cats));
-  window.dispatchEvent(new Event("m2:categories"));
-}
-
-export function getCategories(): Category[] {
-  return readCats();
-}
-
-export function addCategory(label: string): Category {
-  const trimmed = label.trim();
-  if (!trimmed) throw new Error("메뉴 이름을 입력하세요.");
-  const cats = readCats();
-  if (cats.some((c) => c.label === trimmed)) throw new Error("같은 이름의 메뉴가 이미 있습니다.");
-  const key = `cat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-  const next: Category = { key, label: trimmed };
-  writeCats([...cats, next]);
-  return next;
-}
-
-export function renameCategory(key: string, label: string): void {
-  const trimmed = label.trim();
-  if (!trimmed) throw new Error("메뉴 이름을 입력하세요.");
-  const cats = readCats();
-  if (cats.some((c) => c.key !== key && c.label === trimmed))
-    throw new Error("같은 이름의 메뉴가 이미 있습니다.");
-  writeCats(cats.map((c) => (c.key === key ? { ...c, label: trimmed } : c)));
-}
-
-export function removeCategory(key: string): void {
-  const cats = readCats().filter((c) => c.key !== key);
-  writeCats(cats);
-}
 
 const PWD_KEY = "m2_pwd";
 const AUTH_KEY = "m2_auth";
@@ -146,12 +68,16 @@ function setTeam(t: Team | null) {
   else sessionStorage.removeItem(TEAM_KEY);
 }
 
+function notifyCategories() {
+  if (!isBrowser()) return;
+  window.dispatchEvent(new Event("m2:categories"));
+}
+
 function notify() {
   if (!isBrowser()) return;
   window.dispatchEvent(new Event("m2:presentations"));
 }
 
-/** 서버에 비밀번호 검증. 성공 시 sessionStorage 에 저장. */
 export async function login(password: string): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/login`, {
@@ -171,6 +97,63 @@ export async function login(password: string): Promise<boolean> {
   }
 }
 
+// --- Categories API ---
+export async function getCategories(): Promise<Category[]> {
+  const res = await fetch(`${API_BASE}/api/categories`, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error(`카테고리 조회 실패 (${res.status})`);
+  return (await res.json()) as Category[];
+}
+
+export async function addCategory(label: string): Promise<Category> {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("메뉴 이름을 입력하세요.");
+  const res = await fetch(`${API_BASE}/api/categories`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ label: trimmed }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error || `메뉴 추가 실패 (${res.status})`);
+  }
+  const cat = (await res.json()) as Category;
+  notifyCategories();
+  return cat;
+}
+
+export async function renameCategory(key: string, label: string): Promise<void> {
+  const trimmed = label.trim();
+  if (!trimmed) throw new Error("메뉴 이름을 입력하세요.");
+  const res = await fetch(`${API_BASE}/api/categories/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ label: trimmed }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error || `이름 변경 실패 (${res.status})`);
+  }
+  notifyCategories();
+}
+
+export async function removeCategory(key: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/categories/${encodeURIComponent(key)}`, {
+    method: "DELETE",
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error(`메뉴 삭제 실패 (${res.status})`);
+  notifyCategories();
+}
+
+// --- Presentations API ---
 export async function getPresentations(): Promise<Presentation[]> {
   const res = await fetch(`${API_BASE}/api/presentations`, {
     headers: { "x-app-password": getPassword() },

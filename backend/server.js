@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 const CSV_PATH = path.join(DATA_DIR, "presentations.csv");
+const CATS_PATH = path.join(DATA_DIR, "categories.json");
 
 const PORT = Number(process.env.PORT) || 4000;
 const TEAM_PASSWORDS = {
@@ -26,16 +27,18 @@ function teamForPassword(pwd) {
   return null;
 }
 
+const DEFAULT_CATEGORIES = [
+  { key: "company", label: "회사소개" },
+  { key: "strategy", label: "전략기획" },
+  { key: "product", label: "제품기획" },
+  { key: "sales_cat", label: "영업자료" },
+  { key: "reference", label: "참고자료" },
+  { key: "education", label: "교육자료" },
+];
+
 const CSV_HEADERS = [
-  "id",
-  "name",
-  "category",
-  "sourceType",
-  "src",
-  "mime",
-  "fileName",
-  "createdAt",
-  "team",
+  "id", "name", "category", "sourceType",
+  "src", "mime", "fileName", "createdAt", "team",
 ];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -43,8 +46,11 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(CSV_PATH)) {
   fs.writeFileSync(CSV_PATH, csvStringify([CSV_HEADERS]), "utf8");
 }
+if (!fs.existsSync(CATS_PATH)) {
+  fs.writeFileSync(CATS_PATH, JSON.stringify({}), "utf8");
+}
 
-// ------- CSV helpers with a tiny serial mutex -------
+// ------- CSV helpers -------
 let chain = Promise.resolve();
 function serialize(task) {
   const next = chain.then(task, task);
@@ -56,15 +62,10 @@ function readAll() {
   const text = fs.readFileSync(CSV_PATH, "utf8");
   const rows = csvParse(text, { columns: true, skip_empty_lines: true });
   return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    category: r.category,
-    sourceType: r.sourceType,
-    src: r.src,
-    mime: r.mime || undefined,
-    fileName: r.fileName || undefined,
-    createdAt: Number(r.createdAt) || 0,
-    team: r.team || "",
+    id: r.id, name: r.name, category: r.category,
+    sourceType: r.sourceType, src: r.src,
+    mime: r.mime || undefined, fileName: r.fileName || undefined,
+    createdAt: Number(r.createdAt) || 0, team: r.team || "",
   }));
 }
 
@@ -73,10 +74,26 @@ function writeAll(list) {
   fs.writeFileSync(CSV_PATH, csvStringify(out), "utf8");
 }
 
-// One-time migration: any row missing a team is duplicated into all teams.
-// The original row keeps its id and is assigned to the first team; additional
-// teams get a new id but share the same `src` (for files) — actual file deletes
-// are guarded by a shared-src check below.
+// ------- Category helpers -------
+function readAllCats() {
+  try {
+    return JSON.parse(fs.readFileSync(CATS_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeAllCats(data) {
+  fs.writeFileSync(CATS_PATH, JSON.stringify(data, null, 2), "utf8");
+}
+
+function getCatsForTeam(team) {
+  const all = readAllCats();
+  if (all[team] && all[team].length > 0) return all[team];
+  return DEFAULT_CATEGORIES.map((c) => ({ ...c }));
+}
+
+// One-time migration
 (function migrateTeams() {
   try {
     const list = readAll();
@@ -85,11 +102,8 @@ function writeAll(list) {
     const kept = list.filter((p) => !!p.team);
     for (const o of orphans) {
       TEAMS.forEach((team, idx) => {
-        if (idx === 0) {
-          kept.push({ ...o, team });
-        } else {
-          kept.push({ ...o, id: crypto.randomUUID(), team });
-        }
+        if (idx === 0) kept.push({ ...o, team });
+        else kept.push({ ...o, id: crypto.randomUUID(), team });
       });
     }
     writeAll(kept);
@@ -114,13 +128,12 @@ function requirePassword(req, res, next) {
 function publicizeFileSrc(req, p) {
   if (p.sourceType !== "file") return p;
   const base = `${req.protocol}://${req.get("host")}`;
-  // Embed the team password so iframe/<embed> requests (which can't set headers)
-  // can still authenticate the file fetch.
   const pwd = req.header("x-app-password") || "";
   const qs = pwd ? `?pwd=${encodeURIComponent(pwd)}` : "";
   return { ...p, src: `${base}/api/files/${p.id}${qs}` };
 }
 
+// --- Auth ---
 app.post("/api/login", (req, res) => {
   const { password } = req.body || {};
   const team = teamForPassword(password);
@@ -128,6 +141,75 @@ app.post("/api/login", (req, res) => {
   return res.status(401).json({ ok: false });
 });
 
+// --- Categories ---
+app.get("/api/categories", requirePassword, (req, res) => {
+  try {
+    res.json(getCatsForTeam(req.team));
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.post("/api/categories", requirePassword, (req, res) => {
+  try {
+    const { label } = req.body || {};
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: "label required" });
+    }
+    const trimmed = String(label).trim();
+    const cats = getCatsForTeam(req.team);
+    if (cats.some((c) => c.label === trimmed)) {
+      return res.status(409).json({ error: "같은 이름의 메뉴가 이미 있습니다." });
+    }
+    const key = `cat_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const newCat = { key, label: trimmed };
+    cats.push(newCat);
+    const all = readAllCats();
+    all[req.team] = cats;
+    writeAllCats(all);
+    res.json(newCat);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.patch("/api/categories/:key", requirePassword, (req, res) => {
+  try {
+    const { label } = req.body || {};
+    if (!label || !String(label).trim()) {
+      return res.status(400).json({ error: "label required" });
+    }
+    const trimmed = String(label).trim();
+    const cats = getCatsForTeam(req.team);
+    if (cats.some((c) => c.key !== req.params.key && c.label === trimmed)) {
+      return res.status(409).json({ error: "같은 이름의 메뉴가 이미 있습니다." });
+    }
+    const idx = cats.findIndex((c) => c.key === req.params.key);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+    cats[idx] = { ...cats[idx], label: trimmed };
+    const all = readAllCats();
+    all[req.team] = cats;
+    writeAllCats(all);
+    res.json(cats[idx]);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.delete("/api/categories/:key", requirePassword, (req, res) => {
+  try {
+    const cats = getCatsForTeam(req.team);
+    const next = cats.filter((c) => c.key !== req.params.key);
+    const all = readAllCats();
+    all[req.team] = next;
+    writeAllCats(all);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// --- Presentations ---
 app.get("/api/presentations", requirePassword, (req, res) => {
   try {
     const list = readAll()
@@ -141,7 +223,6 @@ app.get("/api/presentations", requirePassword, (req, res) => {
 
 app.get("/api/files/:id", (req, res) => {
   try {
-    // Password may come via header or ?pwd= (some viewers can't set headers).
     const pwd = req.header("x-app-password") || req.query.pwd;
     const team = teamForPassword(pwd);
     if (!team) return res.status(401).send("unauthorized");
@@ -172,66 +253,48 @@ const upload = multer({
       cb(null, `${id}${ext}`);
     },
   }),
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+  limits: { fileSize: 200 * 1024 * 1024 },
 });
 
-app.post(
-  "/api/presentations",
-  requirePassword,
-  upload.single("file"),
-  async (req, res) => {
-    try {
-      const { name, category, sourceType, url } = req.body || {};
-      if (!name || !category || !sourceType) {
-        return res.status(400).json({ error: "missing fields" });
-      }
-
-      let entry;
-      if (sourceType === "file") {
-        if (!req.file) return res.status(400).json({ error: "file required" });
-        // derive id from stored filename (uuid + ext)
-        const stored = req.file.filename;
-        const id = path.basename(stored, path.extname(stored));
-        entry = {
-          id,
-          name: String(name).trim(),
-          category: String(category),
-          sourceType: "file",
-          src: path.posix.join("uploads", stored),
-          mime: req.file.mimetype || "",
-          fileName: req.file.originalname || "",
-          createdAt: Date.now(),
-          team: req.team,
-        };
-      } else if (sourceType === "url") {
-        if (!url) return res.status(400).json({ error: "url required" });
-        entry = {
-          id: crypto.randomUUID(),
-          name: String(name).trim(),
-          category: String(category),
-          sourceType: "url",
-          src: String(url).trim(),
-          mime: "",
-          fileName: "",
-          createdAt: Date.now(),
-          team: req.team,
-        };
-      } else {
-        return res.status(400).json({ error: "bad sourceType" });
-      }
-
-      await serialize(async () => {
-        const list = readAll();
-        list.push(entry);
-        writeAll(list);
-      });
-
-      res.json(publicizeFileSrc(req, entry));
-    } catch (e) {
-      res.status(500).json({ error: String(e?.message || e) });
+app.post("/api/presentations", requirePassword, upload.single("file"), async (req, res) => {
+  try {
+    const { name, category, sourceType, url } = req.body || {};
+    if (!name || !category || !sourceType) {
+      return res.status(400).json({ error: "missing fields" });
     }
-  },
-);
+    let entry;
+    if (sourceType === "file") {
+      if (!req.file) return res.status(400).json({ error: "file required" });
+      const stored = req.file.filename;
+      const id = path.basename(stored, path.extname(stored));
+      entry = {
+        id, name: String(name).trim(), category: String(category),
+        sourceType: "file", src: path.posix.join("uploads", stored),
+        mime: req.file.mimetype || "",
+        fileName: Buffer.from(req.file.originalname, "latin1").toString("utf8") || "",
+        createdAt: Date.now(), team: req.team,
+      };
+    } else if (sourceType === "url") {
+      if (!url) return res.status(400).json({ error: "url required" });
+      entry = {
+        id: crypto.randomUUID(), name: String(name).trim(),
+        category: String(category), sourceType: "url",
+        src: String(url).trim(), mime: "", fileName: "",
+        createdAt: Date.now(), team: req.team,
+      };
+    } else {
+      return res.status(400).json({ error: "bad sourceType" });
+    }
+    await serialize(async () => {
+      const list = readAll();
+      list.push(entry);
+      writeAll(list);
+    });
+    res.json(publicizeFileSrc(req, entry));
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 
 app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
   try {
@@ -242,17 +305,11 @@ app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
       const next = list.filter((p) => p.id !== req.params.id);
       writeAll(next);
       if (target && target.sourceType === "file") {
-        // Only unlink the physical file if no other row still references it
-        // (a row in another team may share the same src after migration).
-        const stillReferenced = next.some(
-          (p) => p.sourceType === "file" && p.src === target.src,
-        );
+        const stillReferenced = next.some((p) => p.sourceType === "file" && p.src === target.src);
         if (!stillReferenced) {
           const abs = path.join(__dirname, target.src);
           if (abs.startsWith(UPLOAD_DIR) && fs.existsSync(abs)) {
-            try {
-              fs.unlinkSync(abs);
-            } catch {}
+            try { fs.unlinkSync(abs); } catch {}
           }
         }
       }
@@ -291,5 +348,6 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`[M2SOFT SFA backend] listening on http://0.0.0.0:${PORT}`);
   console.log(`  CSV : ${CSV_PATH}`);
+  console.log(`  CATS: ${CATS_PATH}`);
   console.log(`  Files: ${UPLOAD_DIR}`);
 });
