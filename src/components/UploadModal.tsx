@@ -10,18 +10,8 @@ import { X, Upload, Link as LinkIcon, FileText } from "lucide-react";
 
 export function UploadModal({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<SourceType>("file");
-  const [cats, setCats] = useState<Category[]>(() => getCategories());
-  const [category, setCategory] = useState<string>(() => getCategories()[0]?.key ?? "");
-
-  useEffect(() => {
-    const refresh = () => {
-      const next = getCategories();
-      setCats(next);
-      setCategory((cur) => (next.some((c) => c.key === cur) ? cur : next[0]?.key ?? ""));
-    };
-    window.addEventListener("m2:categories", refresh);
-    return () => window.removeEventListener("m2:categories", refresh);
-  }, []);
+  const [cats, setCats] = useState<Category[]>([]);
+  const [category, setCategory] = useState<string>("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -29,6 +19,29 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 카테고리 비동기 로드
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      getCategories()
+        .then((next) => {
+          if (!cancelled) {
+            setCats(next);
+            setCategory((cur) =>
+              next.some((c) => c.key === cur) ? cur : next[0]?.key ?? ""
+            );
+          }
+        })
+        .catch((e) => console.error(e));
+    };
+    refresh();
+    window.addEventListener("m2:categories", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("m2:categories", refresh);
+    };
+  }, []);
 
   const pickFile = (f: File | null) => {
     setFile(f);
@@ -77,7 +90,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* Source type combo */}
+        {/* Source type */}
         <label className="block mb-4">
           <span className="text-xs font-medium text-muted-foreground mb-1.5 block">소스 유형</span>
           <select
@@ -85,7 +98,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setMode(e.target.value as SourceType)}
             className="w-full h-11 px-3 rounded-lg bg-input border border-border text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/30 transition"
           >
-            <option value="file">파일을 드래그하거나 클릭하여 업로드</option>
+            <option value="file">파일 업로드</option>
             <option value="url">URL 입력</option>
           </select>
         </label>
@@ -93,10 +106,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
         {/* File / URL input */}
         {mode === "file" ? (
           <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(e) => {
               e.preventDefault();
@@ -105,9 +115,10 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
               if (f) pickFile(f);
             }}
             onClick={() => inputRef.current?.click()}
-            className={`mb-4 cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition ${
-              dragOver ? "border-brand bg-brand/10" : "border-border hover:border-brand/60 hover:bg-accent/40"
-            }`}
+            className={[
+              "mb-4 cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition",
+              dragOver ? "border-brand bg-brand/10" : "border-border hover:border-brand/60 hover:bg-accent/40",
+            ].join(" ")}
           >
             <input
               ref={inputRef}
@@ -172,9 +183,7 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
           />
         </label>
 
-        {err && (
-          <p className="mb-3 text-sm text-destructive">{err}</p>
-        )}
+        {err && <p className="mb-3 text-sm text-destructive">{err}</p>}
 
         <div className="flex gap-2 justify-end">
           <button
