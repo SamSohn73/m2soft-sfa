@@ -25,6 +25,7 @@ import {
   Trash2,
   Pencil,
   FolderPlus,
+  PanelLeftClose,
 } from "lucide-react";
 import {
   ContextMenu,
@@ -40,6 +41,8 @@ type Props = {
   onOpenPassword: () => void;
   open: boolean;
   onClose: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 };
 
 function highlight(text: string, query: string) {
@@ -63,6 +66,8 @@ export function Sidebar({
   onOpenPassword,
   open,
   onClose,
+  collapsed = false,
+  onToggleCollapse,
 }: Props) {
   const navigate = useNavigate();
   const [list, setList] = useState<Presentation[]>([]);
@@ -200,8 +205,9 @@ export function Sidebar({
 
       <aside
         className={`fixed lg:static z-40 inset-y-0 left-0 w-[280px] bg-sidebar text-sidebar-foreground border-r border-border flex flex-col
-        transition-transform duration-300 ease-out
-        ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0`}
+        transition-all duration-300 ease-out
+        ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0
+        ${collapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0" : ""}`}
       >
         {/* Logo */}
         <div className="px-5 pt-5 pb-4 flex items-center justify-between">
@@ -219,9 +225,15 @@ export function Sidebar({
           </div>
           <button
             onClick={onClose}
-            className="lg:hidden h-8 w-8 grid place-items-center rounded-lg hover:bg-sidebar-hover transition"
-          >
+            className="lg:hidden h-8 w-8 grid place-items-center rounded-lg hover:bg-sidebar-hover transition">
             <X className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onToggleCollapse}
+            className="hidden lg:grid h-8 w-8 place-items-center rounded-lg hover:bg-sidebar-hover transition"
+            aria-label="사이드바 접기"
+          >
+            <PanelLeftClose className="h-4 w-4" />
           </button>
         </div>
 

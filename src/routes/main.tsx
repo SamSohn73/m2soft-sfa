@@ -5,7 +5,7 @@ import { Viewer } from "@/components/Viewer";
 import { UploadModal } from "@/components/UploadModal";
 import { PasswordModal } from "@/components/PasswordModal";
 import { getPresentations, isAuthed, type Presentation } from "@/lib/store";
-import { Menu } from "lucide-react";
+import { Menu, PanelLeftOpen } from "lucide-react";
 
 export const Route = createFileRoute("/main")({
   head: () => ({
@@ -23,12 +23,12 @@ function MainPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     if (!isAuthed()) navigate({ to: "/" });
   }, [navigate]);
 
-  // Keep selected fresh / clear if deleted
   useEffect(() => {
     if (!selected) return;
     const refresh = () => {
@@ -43,8 +43,15 @@ function MainPage() {
     return () => window.removeEventListener("m2:presentations", refresh);
   }, [selected]);
 
+  const btnCls = [
+    "hidden lg:flex fixed left-0 top-6 z-50",
+    "h-9 w-6 items-center justify-center",
+    "bg-sidebar border border-border border-l-0",
+    "rounded-r-lg hover:bg-sidebar-hover transition shadow-md",
+  ].join(" ");
+
   return (
-    <div className="h-screen w-full flex bg-background overflow-hidden">
+    <div className="h-screen w-full flex bg-background overflow-hidden relative">
       <Sidebar
         selectedId={selected?.id ?? null}
         onSelect={(p) => {
@@ -55,10 +62,21 @@ function MainPage() {
         onOpenPassword={() => setPwdOpen(true)}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
       />
 
+      {sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className={btnCls}
+          aria-label="사이드바 열기"
+        >
+          <PanelLeftOpen className="h-3.5 w-3.5" />
+        </button>
+      )}
+
       <main className="flex-1 min-w-0 bg-content flex flex-col">
-        {/* Mobile top bar */}
         <div className="lg:hidden flex items-center gap-2 px-3 h-12 border-b border-border bg-sidebar">
           <button
             onClick={() => setSidebarOpen(true)}
