@@ -14,7 +14,17 @@ const UPLOAD_DIR = path.join(__dirname, "uploads");
 const CSV_PATH = path.join(DATA_DIR, "presentations.csv");
 
 const PORT = Number(process.env.PORT) || 4000;
-const APP_PASSWORD = process.env.APP_PASSWORD || "2188";
+const TEAM_PASSWORDS = {
+  sales: process.env.APP_PASSWORD_SALES || "2188s",
+  eng: process.env.APP_PASSWORD_ENG || "2188e",
+};
+const TEAMS = Object.keys(TEAM_PASSWORDS);
+
+function teamForPassword(pwd) {
+  if (!pwd) return null;
+  for (const t of TEAMS) if (TEAM_PASSWORDS[t] === pwd) return t;
+  return null;
+}
 
 const CSV_HEADERS = [
   "id",
@@ -25,6 +35,7 @@ const CSV_HEADERS = [
   "mime",
   "fileName",
   "createdAt",
+  "team",
 ];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -53,6 +64,7 @@ function readAll() {
     mime: r.mime || undefined,
     fileName: r.fileName || undefined,
     createdAt: Number(r.createdAt) || 0,
+    team: r.team || "",
   }));
 }
 
@@ -61,32 +73,66 @@ function writeAll(list) {
   fs.writeFileSync(CSV_PATH, csvStringify(out), "utf8");
 }
 
+// One-time migration: any row missing a team is duplicated into all teams.
+// The original row keeps its id and is assigned to the first team; additional
+// teams get a new id but share the same `src` (for files) — actual file deletes
+// are guarded by a shared-src check below.
+(function migrateTeams() {
+  try {
+    const list = readAll();
+    const orphans = list.filter((p) => !p.team);
+    if (orphans.length === 0) return;
+    const kept = list.filter((p) => !!p.team);
+    for (const o of orphans) {
+      TEAMS.forEach((team, idx) => {
+        if (idx === 0) {
+          kept.push({ ...o, team });
+        } else {
+          kept.push({ ...o, id: crypto.randomUUID(), team });
+        }
+      });
+    }
+    writeAll(kept);
+    console.log(`[migrate] duplicated ${orphans.length} row(s) across teams: ${TEAMS.join(", ")}`);
+  } catch (e) {
+    console.error("[migrate] failed:", e);
+  }
+})();
+
 // ------- Express -------
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 function requirePassword(req, res, next) {
-  const pwd = req.header("x-app-password");
-  if (pwd !== APP_PASSWORD) return res.status(401).json({ error: "unauthorized" });
+  const team = teamForPassword(req.header("x-app-password"));
+  if (!team) return res.status(401).json({ error: "unauthorized" });
+  req.team = team;
   next();
 }
 
 function publicizeFileSrc(req, p) {
   if (p.sourceType !== "file") return p;
   const base = `${req.protocol}://${req.get("host")}`;
-  return { ...p, src: `${base}/api/files/${p.id}` };
+  // Embed the team password so iframe/<embed> requests (which can't set headers)
+  // can still authenticate the file fetch.
+  const pwd = req.header("x-app-password") || "";
+  const qs = pwd ? `?pwd=${encodeURIComponent(pwd)}` : "";
+  return { ...p, src: `${base}/api/files/${p.id}${qs}` };
 }
 
 app.post("/api/login", (req, res) => {
   const { password } = req.body || {};
-  if (password === APP_PASSWORD) return res.json({ ok: true });
+  const team = teamForPassword(password);
+  if (team) return res.json({ ok: true, team });
   return res.status(401).json({ ok: false });
 });
 
-app.get("/api/presentations", (req, res) => {
+app.get("/api/presentations", requirePassword, (req, res) => {
   try {
-    const list = readAll().map((p) => publicizeFileSrc(req, p));
+    const list = readAll()
+      .filter((p) => p.team === req.team)
+      .map((p) => publicizeFileSrc(req, p));
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -95,7 +141,13 @@ app.get("/api/presentations", (req, res) => {
 
 app.get("/api/files/:id", (req, res) => {
   try {
-    const item = readAll().find((p) => p.id === req.params.id && p.sourceType === "file");
+    // Password may come via header or ?pwd= (some viewers can't set headers).
+    const pwd = req.header("x-app-password") || req.query.pwd;
+    const team = teamForPassword(pwd);
+    if (!team) return res.status(401).send("unauthorized");
+    const item = readAll().find(
+      (p) => p.id === req.params.id && p.sourceType === "file" && p.team === team,
+    );
     if (!item) return res.status(404).send("not found");
     const abs = path.join(__dirname, item.src);
     if (!abs.startsWith(UPLOAD_DIR)) return res.status(400).send("bad path");
@@ -149,6 +201,7 @@ app.post(
           mime: req.file.mimetype || "",
           fileName: req.file.originalname || "",
           createdAt: Date.now(),
+          team: req.team,
         };
       } else if (sourceType === "url") {
         if (!url) return res.status(400).json({ error: "url required" });
@@ -161,6 +214,7 @@ app.post(
           mime: "",
           fileName: "",
           createdAt: Date.now(),
+          team: req.team,
         };
       } else {
         return res.status(400).json({ error: "bad sourceType" });
@@ -183,15 +237,23 @@ app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
   try {
     await serialize(async () => {
       const list = readAll();
-      const target = list.find((p) => p.id === req.params.id);
+      const target = list.find((p) => p.id === req.params.id && p.team === req.team);
+      if (!target) return;
       const next = list.filter((p) => p.id !== req.params.id);
       writeAll(next);
       if (target && target.sourceType === "file") {
-        const abs = path.join(__dirname, target.src);
-        if (abs.startsWith(UPLOAD_DIR) && fs.existsSync(abs)) {
-          try {
-            fs.unlinkSync(abs);
-          } catch {}
+        // Only unlink the physical file if no other row still references it
+        // (a row in another team may share the same src after migration).
+        const stillReferenced = next.some(
+          (p) => p.sourceType === "file" && p.src === target.src,
+        );
+        if (!stillReferenced) {
+          const abs = path.join(__dirname, target.src);
+          if (abs.startsWith(UPLOAD_DIR) && fs.existsSync(abs)) {
+            try {
+              fs.unlinkSync(abs);
+            } catch {}
+          }
         }
       }
     });
@@ -211,7 +273,7 @@ app.patch("/api/presentations/:id", requirePassword, async (req, res) => {
     let updated = null;
     await serialize(async () => {
       const list = readAll();
-      const idx = list.findIndex((p) => p.id === req.params.id);
+      const idx = list.findIndex((p) => p.id === req.params.id && p.team === req.team);
       if (idx === -1) return;
       list[idx] = { ...list[idx], name: trimmed };
       updated = list[idx];

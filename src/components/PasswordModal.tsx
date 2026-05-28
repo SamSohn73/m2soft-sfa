@@ -26,9 +26,11 @@ export function PasswordModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <p className="text-sm text-muted-foreground leading-relaxed">
-          비밀번호는 백엔드 서버의 환경변수
-          <code className="mx-1 px-1.5 py-0.5 rounded bg-muted text-foreground">APP_PASSWORD</code>
-          로 관리됩니다.
+          팀별 비밀번호는 백엔드 서버의 환경변수
+          <code className="mx-1 px-1.5 py-0.5 rounded bg-muted text-foreground">APP_PASSWORD_SALES</code>
+          (영업팀)와
+          <code className="mx-1 px-1.5 py-0.5 rounded bg-muted text-foreground">APP_PASSWORD_ENG</code>
+          (엔지니어팀)로 관리됩니다.
           <br />
           변경하려면 서버 PC에서 환경변수를 수정한 뒤 백엔드를 재시작하세요.
         </p>
