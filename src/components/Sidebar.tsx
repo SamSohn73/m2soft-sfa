@@ -90,7 +90,7 @@ export function Sidebar({
             setCats(next);
             setOpenCats((prev) => {
               const merged = { ...prev };
-              for (const c of next) if (!(c.key in merged)) merged[c.key] = true;
+              for (const c of next) if (!(c.key in merged)) merged[c.key] = false;
               return merged;
             });
           }

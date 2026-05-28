@@ -2,6 +2,25 @@ import { buildViewerUrl } from "@/lib/viewer";
 import type { Presentation } from "@/lib/store";
 import { FileQuestion, Download, ExternalLink } from "lucide-react";
 
+
+async function triggerDownload(src: string, fileName: string) {
+  try {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+  } catch {
+    window.open(src, "_blank");
+  }
+}
+
+
 export function Viewer({ presentation }: { presentation: Presentation | null }) {
   if (!presentation) {
     return (
@@ -33,13 +52,17 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {presentation.sourceType === "file" && (
-            <a
-              href={presentation.src}
-              download={presentation.fileName ?? presentation.name}
+            <button
+              onClick={() =>
+                triggerDownload(
+                  presentation.src,
+                  presentation.fileName ?? presentation.name
+                )
+              }
               className="h-9 px-3 rounded-lg border border-border hover:bg-accent transition flex items-center gap-1.5 text-sm"
             >
               <Download className="h-4 w-4" /> <span className="hidden sm:inline">다운로드</span>
-            </a>
+            </button>
           )}
           {presentation.sourceType === "url" && (
             <a
