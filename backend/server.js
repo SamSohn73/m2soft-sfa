@@ -114,7 +114,11 @@ function requirePassword(req, res, next) {
 function publicizeFileSrc(req, p) {
   if (p.sourceType !== "file") return p;
   const base = `${req.protocol}://${req.get("host")}`;
-  return { ...p, src: `${base}/api/files/${p.id}` };
+  // Embed the team password so iframe/<embed> requests (which can't set headers)
+  // can still authenticate the file fetch.
+  const pwd = req.header("x-app-password") || "";
+  const qs = pwd ? `?pwd=${encodeURIComponent(pwd)}` : "";
+  return { ...p, src: `${base}/api/files/${p.id}${qs}` };
 }
 
 app.post("/api/login", (req, res) => {
