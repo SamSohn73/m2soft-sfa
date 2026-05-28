@@ -4,11 +4,13 @@ import {
   addCategory,
   getCategories,
   getPresentations,
+  getTeam,
   removePresentation,
   removeCategory,
   renameCategory,
   renamePresentation,
   setAuthed,
+  TEAM_LABELS,
   type Category,
   type Presentation,
 } from "@/lib/store";
@@ -220,7 +222,14 @@ export function Sidebar({
                 <span>M2</span>
                 <span className="text-brand">SOFT</span>
               </div>
-              <div className="text-[10px] text-muted-foreground">more than the most</div>
+              <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                <span>more than the most</span>
+                {getTeam() && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
+                    {TEAM_LABELS[getTeam()!]}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <button
