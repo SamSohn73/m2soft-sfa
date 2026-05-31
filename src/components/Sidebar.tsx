@@ -197,7 +197,7 @@ export function Sidebar({
 
       <aside
         className={[
-          "fixed lg:static z-40 inset-y-0 left-0 w-[280px]",
+          "fixed lg:static z-40 inset-y-0 left-0 w-70",
           "bg-sidebar text-sidebar-foreground border-r border-border flex flex-col",
           "transition-all duration-300 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
@@ -380,7 +380,7 @@ export function Sidebar({
           </div>
           <ContextMenu>
             <ContextMenuTrigger asChild>
-              <div className="flex-1 min-h-[80px]" />
+              <div className="flex-1 min-h-20" />
             </ContextMenuTrigger>
             <ContextMenuContent className="w-40">
               <ContextMenuItem onClick={handleAddCategory}>
