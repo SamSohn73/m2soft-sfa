@@ -10,8 +10,8 @@ import { Menu, PanelLeftOpen } from "lucide-react";
 export const Route = createFileRoute("/main")({
   head: () => ({
     meta: [
-      { title: "M2SOFT Document Viewer" },
-      { name: "description", content: "다양한 문서를 한 곳에서 미리보세요." },
+      { title: "M2Soft SFA Project" },
+      { name: "description", content: "To be M2Soft SFA Project" },
     ],
   }),
   component: MainPage,

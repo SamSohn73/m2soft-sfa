@@ -6,8 +6,8 @@ import { Lock } from "lucide-react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "M2SOFT Document Viewer — 로그인" },
-      { name: "description", content: "M2SOFT 문서 뷰어에 로그인하세요." },
+      { title: "M2Soft SFA Project — 로그인" },
+      { name: "description", content: "M2Soft SFA에 로그인하세요." },
     ],
   }),
   component: LoginPage,
