@@ -15,17 +15,36 @@ const CSV_PATH = path.join(DATA_DIR, "presentations.csv");
 const CATS_PATH = path.join(DATA_DIR, "categories.json");
 
 const PORT = Number(process.env.PORT) || 4000;
-const TEAM_PASSWORDS = {
-  sales: process.env.APP_PASSWORD_SALES || "2188s",
-  eng: process.env.APP_PASSWORD_ENG || "2188e",
-};
-const TEAMS = Object.keys(TEAM_PASSWORDS);
+
+
+const PWD_PATH = path.join(DATA_DIR, "passwords.json");
+
+function readPasswords() {
+  try {
+    if (fs.existsSync(PWD_PATH)) {
+      return JSON.parse(fs.readFileSync(PWD_PATH, "utf8"));
+    }
+  } catch {}
+  return {
+    sales: process.env.APP_PASSWORD_SALES || "2188s",
+    eng: process.env.APP_PASSWORD_ENG || "2188e",
+  };
+}
+
+function writePasswords(data) {
+  fs.writeFileSync(PWD_PATH, JSON.stringify(data, null, 2), "utf8");
+}
+
+const TEAMS = ["sales", "eng"];
 
 function teamForPassword(pwd) {
   if (!pwd) return null;
-  for (const t of TEAMS) if (TEAM_PASSWORDS[t] === pwd) return t;
+  const pwds = readPasswords();
+  for (const t of TEAMS) if (pwds[t] === pwd) return t;
   return null;
 }
+
+
 
 const DEFAULT_CATEGORIES = [
   { key: "company", label: "회사소개" },
@@ -133,6 +152,7 @@ function publicizeFileSrc(req, p) {
   return { ...p, src: `${base}/api/files/${p.id}${qs}` };
 }
 
+
 // --- Auth ---
 app.post("/api/login", (req, res) => {
   const { password } = req.body || {};
@@ -140,6 +160,49 @@ app.post("/api/login", (req, res) => {
   if (team) return res.json({ ok: true, team });
   return res.status(401).json({ ok: false });
 });
+
+app.post("/api/change-password", requirePassword, (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "invalid" });
+    }
+    const trimmed = String(newPassword).trim();
+
+    // 최소 길이 검증
+    if (trimmed.length < 4) {
+      return res.status(400).json({ error: "invalid" });
+    }
+
+    const pwds = readPasswords();
+
+    // 현재 비밀번호 확인
+    if (pwds[req.team] !== String(currentPassword)) {
+      return res.status(400).json({ error: "invalid" });
+    }
+
+    // 현재 비밀번호와 동일한 경우
+    if (pwds[req.team] === trimmed) {
+      return res.status(400).json({ error: "invalid" });
+    }
+
+    // 타 팀 비밀번호와 중복 검증 (동일 메시지로 처리)
+    const otherTeams = TEAMS.filter((t) => t !== req.team);
+    for (const t of otherTeams) {
+      if (pwds[t] === trimmed) {
+        return res.status(400).json({ error: "invalid" });
+      }
+    }
+
+    pwds[req.team] = trimmed;
+    writePasswords(pwds);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "invalid" });
+  }
+});
+
+
 
 // --- Categories ---
 app.get("/api/categories", requirePassword, (req, res) => {
