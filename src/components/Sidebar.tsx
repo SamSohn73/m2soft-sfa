@@ -34,12 +34,13 @@ import {
 import {
   Plus, Search, Menu, ChevronDown, ChevronRight,
   KeyRound, LogOut, X, FileText, Trash2, Pencil,
-  FolderPlus, PanelLeftClose, GripVertical,
+  FolderPlus, PanelLeftClose, GripVertical, ExternalLink,
 } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent,
   ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { OpenModeModal } from "@/components/OpenModeModal";
 
 type Props = {
   selectedId: string | null;
@@ -82,7 +83,7 @@ function SortableCatItem({
   selectedId, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
   onSelect, beginRenameItem, handleRemoveItem, onItemDragEnd, sensors,
-  onOpenUpload,
+  onOpenUpload, onChangeOpenMode,
 }: {
   c: Category;
   isOpen: boolean;
@@ -108,6 +109,7 @@ function SortableCatItem({
   onItemDragEnd: (event: DragEndEvent) => void;
   sensors: ReturnType<typeof useSensors>;
   onOpenUpload: (categoryKey?: string) => void;
+  onChangeOpenMode: (p: Presentation) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: c.key });
@@ -202,6 +204,7 @@ function SortableCatItem({
                   onSelect={onSelect}
                   beginRenameItem={beginRenameItem}
                   handleRemoveItem={handleRemoveItem}
+                  onChangeOpenMode={onChangeOpenMode}
                   query={query}
                 />
               ))}
@@ -216,7 +219,7 @@ function SortableCatItem({
 function SortablePresentationItem({
   p, active, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
-  onSelect, beginRenameItem, handleRemoveItem, query,
+  onSelect, beginRenameItem, handleRemoveItem, onChangeOpenMode, query,
 }: {
   p: Presentation;
   active: boolean;
@@ -228,6 +231,7 @@ function SortablePresentationItem({
   onSelect: (p: Presentation) => void;
   beginRenameItem: (p: Presentation) => void;
   handleRemoveItem: (p: Presentation) => void;
+  onChangeOpenMode: (p: Presentation) => void;
   query: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -281,9 +285,12 @@ function SortablePresentationItem({
             )}
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-40">
+        <ContextMenuContent className="w-44">
           <ContextMenuItem onClick={() => beginRenameItem(p)}>
             <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => onChangeOpenMode(p)}>
+            <ExternalLink className="h-4 w-4 mr-2 text-brand" /> 열기 방식 변경
           </ContextMenuItem>
           <ContextMenuItem
             onClick={() => handleRemoveItem(p)}
@@ -317,6 +324,7 @@ export function Sidebar({
   const [mounted, setMounted] = useState(false);
   const [pendingCats, setPendingCats] = useState<Category[] | null>(null);
   const [pendingItems, setPendingItems] = useState<{ catKey: string; items: Presentation[] } | null>(null);
+  const [openModeTarget, setOpenModeTarget] = useState<Presentation | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -521,6 +529,15 @@ export function Sidebar({
 
   return (
     <>
+      {/* 열기 방식 변경 모달 */}
+      {openModeTarget && (
+        <OpenModeModal
+          presentation={openModeTarget}
+          onClose={() => setOpenModeTarget(null)}
+        />
+      )}
+
+      {/* 확인/취소 팝업 */}
       {confirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 w-72 animate-in fade-in zoom-in-95">
@@ -673,6 +690,7 @@ export function Sidebar({
                       onItemDragEnd={handleItemDragEnd(c.key)}
                       sensors={sensors}
                       onOpenUpload={onOpenUpload}
+                      onChangeOpenMode={setOpenModeTarget}
                     />
                   );
                 })}

@@ -6,6 +6,7 @@ import { UploadModal } from "@/components/UploadModal";
 import { PasswordModal } from "@/components/PasswordModal";
 import { getPresentations, isAuthed, type Presentation } from "@/lib/store";
 import { Menu, PanelLeftOpen } from "lucide-react";
+import { buildViewerUrl } from "@/lib/viewer";
 
 export const Route = createFileRoute("/main")({
   head: () => ({
@@ -51,6 +52,16 @@ function MainPage() {
     setUploadOpen(true);
   };
 
+  const handleSelect = (p: Presentation) => {
+    if (p.openMode === "new_tab") {
+      const { url } = buildViewerUrl(p);
+      window.open(url, "_blank", "noreferrer");
+      return;
+    }
+    setSelected(p);
+    setSidebarOpen(false);
+  };
+
   const btnCls = [
     "hidden lg:flex fixed left-0 top-6 z-50",
     "h-9 w-6 items-center justify-center",
@@ -62,10 +73,7 @@ function MainPage() {
     <div className="h-screen w-full flex bg-background overflow-hidden relative">
       <Sidebar
         selectedId={selected?.id ?? null}
-        onSelect={(p) => {
-          setSelected(p);
-          setSidebarOpen(false);
-        }}
+        onSelect={handleSelect}
         onOpenUpload={handleOpenUpload}
         onOpenPassword={() => setPwdOpen(true)}
         open={sidebarOpen}

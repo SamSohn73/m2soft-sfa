@@ -6,6 +6,8 @@ export const TEAM_LABELS: Record<Team, string> = {
   eng: "엔지니어팀",
 };
 
+export type OpenMode = "inline" | "new_tab";
+
 export type Presentation = {
   id: string;
   name: string;
@@ -16,6 +18,7 @@ export type Presentation = {
   fileName?: string;
   createdAt: number;
   team?: Team;
+  openMode?: OpenMode;
 };
 
 export type Category = { key: string; label: string };
@@ -166,12 +169,14 @@ export async function addPresentationFile(input: {
   name: string;
   category: string;
   file: File;
+  openMode?: OpenMode;
 }): Promise<Presentation> {
   const fd = new FormData();
   fd.append("name", input.name);
   fd.append("category", input.category);
   fd.append("sourceType", "file");
   fd.append("file", input.file);
+  fd.append("openMode", input.openMode ?? "inline");
   return submit(fd);
 }
 
@@ -179,12 +184,14 @@ export async function addPresentationUrl(input: {
   name: string;
   category: string;
   url: string;
+  openMode?: OpenMode;
 }): Promise<Presentation> {
   const fd = new FormData();
   fd.append("name", input.name);
   fd.append("category", input.category);
   fd.append("sourceType", "url");
   fd.append("url", input.url);
+  fd.append("openMode", input.openMode ?? "inline");
   return submit(fd);
 }
 
@@ -254,3 +261,19 @@ export async function reorderPresentations(ids: string[]): Promise<void> {
   if (!res.ok) throw new Error(`순서 변경 실패 (${res.status})`);
   notify();
 }
+
+
+
+export async function changeOpenMode(id: string, openMode: OpenMode): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/presentations/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ openMode }),
+  });
+  if (!res.ok) throw new Error(`열기 방식 변경 실패 (${res.status})`);
+  notify();
+}
+

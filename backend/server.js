@@ -57,7 +57,7 @@ const DEFAULT_CATEGORIES = [
 
 const CSV_HEADERS = [
   "id", "name", "category", "sourceType",
-  "src", "mime", "fileName", "createdAt", "team",
+  "src", "mime", "fileName", "createdAt", "team", "openMode",
 ];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -85,6 +85,7 @@ function readAll() {
     sourceType: r.sourceType, src: r.src,
     mime: r.mime || undefined, fileName: r.fileName || undefined,
     createdAt: Number(r.createdAt) || 0, team: r.team || "",
+    openMode: r.openMode || "inline",
   }));
 }
 
@@ -350,7 +351,7 @@ const upload = multer({
 
 app.post("/api/presentations", requirePassword, upload.single("file"), async (req, res) => {
   try {
-    const { name, category, sourceType, url } = req.body || {};
+    const { name, category, sourceType, url, openMode } = req.body || {};
     if (!name || !category || !sourceType) {
       return res.status(400).json({ error: "missing fields" });
     }
@@ -365,6 +366,7 @@ app.post("/api/presentations", requirePassword, upload.single("file"), async (re
         mime: req.file.mimetype || "",
         fileName: Buffer.from(req.file.originalname, "latin1").toString("utf8") || "",
         createdAt: Date.now(), team: req.team,
+        openMode: openMode === "new_tab" ? "new_tab" : "inline",
       };
     } else if (sourceType === "url") {
       if (!url) return res.status(400).json({ error: "url required" });
@@ -373,6 +375,7 @@ app.post("/api/presentations", requirePassword, upload.single("file"), async (re
         category: String(category), sourceType: "url",
         src: String(url).trim(), mime: "", fileName: "",
         createdAt: Date.now(), team: req.team,
+        openMode: openMode === "new_tab" ? "new_tab" : "inline",
       };
     } else {
       return res.status(400).json({ error: "bad sourceType" });
@@ -414,17 +417,21 @@ app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
 
 app.patch("/api/presentations/:id", requirePassword, async (req, res) => {
   try {
-    const { name } = req.body || {};
-    if (!name || !String(name).trim()) {
-      return res.status(400).json({ error: "name required" });
+    const { name, openMode } = req.body || {};
+    if (!name && !openMode) {
+      return res.status(400).json({ error: "name or openMode required" });
     }
-    const trimmed = String(name).trim();
     let updated = null;
     await serialize(async () => {
       const list = readAll();
       const idx = list.findIndex((p) => p.id === req.params.id && p.team === req.team);
       if (idx === -1) return;
-      list[idx] = { ...list[idx], name: trimmed };
+      if (name && String(name).trim()) {
+        list[idx] = { ...list[idx], name: String(name).trim() };
+      }
+      if (openMode === "inline" || openMode === "new_tab") {
+        list[idx] = { ...list[idx], openMode };
+      }
       updated = list[idx];
       writeAll(list);
     });

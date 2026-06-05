@@ -4,6 +4,7 @@ import {
   addPresentationUrl,
   getCategories,
   type Category,
+  type OpenMode,
   type SourceType,
 } from "@/lib/store";
 import { X, Upload, Link as LinkIcon, FileText } from "lucide-react";
@@ -22,6 +23,7 @@ export function UploadModal({
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [openMode, setOpenMode] = useState<OpenMode>("inline");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,10 +64,10 @@ export function UploadModal({
     try {
       if (mode === "file") {
         if (!file) return;
-        await addPresentationFile({ name: name.trim(), category, file });
+        await addPresentationFile({ name: name.trim(), category, file, openMode });
       } else {
         if (!url.trim()) return;
-        await addPresentationUrl({ name: name.trim(), category, url: url.trim() });
+        await addPresentationUrl({ name: name.trim(), category, url: url.trim(), openMode });
       }
       onClose();
     } catch (e) {
@@ -179,7 +181,7 @@ export function UploadModal({
         </label>
 
         {/* Name */}
-        <label className="block mb-6">
+        <label className="block mb-4">
           <span className="text-xs font-medium text-muted-foreground mb-1.5 block">프리젠테이션 이름</span>
           <input
             value={name}
@@ -188,6 +190,35 @@ export function UploadModal({
             className="w-full h-11 px-3 rounded-lg bg-input border border-border text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/30 transition"
           />
         </label>
+
+        {/* Open mode */}
+        <div className="mb-6">
+          <span className="text-xs font-medium text-muted-foreground mb-2 block">열기 방식</span>
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="openMode"
+                value="inline"
+                checked={openMode === "inline"}
+                onChange={() => setOpenMode("inline")}
+                className="accent-brand w-4 h-4"
+              />
+              <span className="text-sm">기존 창</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="openMode"
+                value="new_tab"
+                checked={openMode === "new_tab"}
+                onChange={() => setOpenMode("new_tab")}
+                className="accent-brand w-4 h-4"
+              />
+              <span className="text-sm">새 탭</span>
+            </label>
+          </div>
+        </div>
 
         {err && <p className="mb-3 text-sm text-destructive">{err}</p>}
 
