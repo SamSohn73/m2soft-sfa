@@ -309,6 +309,9 @@ export function Sidebar({
   const [renameItemValue, setRenameItemValue] = useState("");
   const [dragging, setDragging] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const [pendingCats, setPendingCats] = useState<Category[] | null>(null);
   const [pendingItems, setPendingItems] = useState<{ catKey: string; items: Presentation[] } | null>(null);
 
@@ -626,7 +629,7 @@ export function Sidebar({
         {/* Nav */}
         <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 flex flex-col">
           <DndContext
-            sensors={sensors}
+            sensors={mounted ? sensors : undefined}
             collisionDetection={closestCenter}
             onDragEnd={handleCatDragEnd}
           >
