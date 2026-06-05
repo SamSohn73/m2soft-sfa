@@ -226,3 +226,31 @@ export async function renamePresentation(id: string, name: string): Promise<void
   if (!res.ok) throw new Error(`이름 변경 실패 (${res.status})`);
   notify();
 }
+
+
+
+export async function reorderCategories(keys: string[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/categories/reorder`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ keys }),
+  });
+  if (!res.ok) throw new Error(`순서 변경 실패 (${res.status})`);
+  notifyCategories();
+}
+
+export async function reorderPresentations(ids: string[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/presentations/reorder`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error(`순서 변경 실패 (${res.status})`);
+  notify();
+}

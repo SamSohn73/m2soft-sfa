@@ -406,6 +406,49 @@ app.patch("/api/presentations/:id", requirePassword, async (req, res) => {
   }
 });
 
+
+
+// 카테고리 순서 변경
+app.put("/api/categories/reorder", requirePassword, (req, res) => {
+  try {
+    const { keys } = req.body || {};
+    if (!Array.isArray(keys)) return res.status(400).json({ error: "keys required" });
+    const cats = getCatsForTeam(req.team);
+    const reordered = keys
+      .map((k) => cats.find((c) => c.key === k))
+      .filter(Boolean);
+    const all = readAllCats();
+    all[req.team] = reordered;
+    writeAllCats(all);
+    res.json(reordered);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// 프레젠테이션 순서 변경
+app.put("/api/presentations/reorder", requirePassword, async (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids)) return res.status(400).json({ error: "ids required" });
+    await serialize(async () => {
+      const list = readAll();
+      const teamItems = list.filter((p) => p.team === req.team);
+      const otherItems = list.filter((p) => p.team !== req.team);
+      const reordered = ids
+        .map((id) => teamItems.find((p) => p.id === id))
+        .filter(Boolean);
+      const unchanged = teamItems.filter((p) => !ids.includes(p.id));
+      writeAll([...otherItems, ...reordered, ...unchanged]);
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
