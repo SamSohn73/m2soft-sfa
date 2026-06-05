@@ -80,7 +80,7 @@ function SortableCatItem({
   setOpenCats, beginRename, handleRemoveCategory, query,
   selectedId, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
-  onSelect, beginRenameItem, handleRemoveItem,
+  onSelect, beginRenameItem, handleRemoveItem, onItemDragEnd, sensors,
 }: {
   c: Category;
   isOpen: boolean;
@@ -101,8 +101,10 @@ function SortableCatItem({
   commitRenameItem: () => void;
   setRenamingItemId: (v: string | null) => void;
   onSelect: (p: Presentation) => void;
-  beginRenameItem: (p: Presentation) => void;
+beginRenameItem: (p: Presentation) => void;
   handleRemoveItem: (p: Presentation) => void;
+  onItemDragEnd: (event: DragEndEvent) => void;
+  sensors: ReturnType<typeof useSensors>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: c.key });
@@ -170,14 +172,19 @@ function SortableCatItem({
         </ContextMenuContent>
       </ContextMenu>
 
-      {isOpen && items.length > 0 && (
-        <SortableContext
-          items={items.map((p) => p.id)}
-          strategy={verticalListSortingStrategy}
+{isOpen && items.length > 0 && (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onItemDragEnd}
         >
-          <ul className="ml-3 pl-3 border-l border-border/60 space-y-0.5 mt-0.5 mb-1">
-            {items.map((p) => (
-              <SortablePresentationItem
+          <SortableContext
+            items={items.map((p) => p.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <ul className="ml-3 pl-3 border-l border-border/60 space-y-0.5 mt-0.5 mb-1">
+              {items.map((p) => (
+                <SortablePresentationItem
                 key={p.id}
                 p={p}
                 active={selectedId === p.id}
@@ -191,9 +198,10 @@ function SortableCatItem({
                 handleRemoveItem={handleRemoveItem}
                 query={query}
               />
-            ))}
-          </ul>
-        </SortableContext>
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   );
@@ -632,36 +640,32 @@ export function Sidebar({
                     ? pendingItems.items
                     : (grouped[c.key] ?? []);
                   return (
-                    <DndContext
+                    <SortableCatItem
                       key={c.key}
+                      c={c}
+                      isOpen={openCats[c.key]}
+                      items={items}
+                      renamingKey={renamingKey}
+                      renameValue={renameValue}
+                      setRenameValue={setRenameValue}
+                      commitRename={commitRename}
+                      setRenamingKey={setRenamingKey}
+                      setOpenCats={setOpenCats}
+                      beginRename={beginRename}
+                      handleRemoveCategory={handleRemoveCategory}
+                      query={query}
+                      selectedId={selectedId}
+                      renamingItemId={renamingItemId}
+                      renameItemValue={renameItemValue}
+                      setRenameItemValue={setRenameItemValue}
+                      commitRenameItem={commitRenameItem}
+                      setRenamingItemId={setRenamingItemId}
+                      onSelect={onSelect}
+                      beginRenameItem={beginRenameItem}
+                      handleRemoveItem={handleRemoveItem}
+                      onItemDragEnd={handleItemDragEnd(c.key)}
                       sensors={sensors}
-                      collisionDetection={closestCenter}
-                      onDragEnd={handleItemDragEnd(c.key)}
-                    >
-                      <SortableCatItem
-                        c={c}
-                        isOpen={openCats[c.key]}
-                        items={items}
-                        renamingKey={renamingKey}
-                        renameValue={renameValue}
-                        setRenameValue={setRenameValue}
-                        commitRename={commitRename}
-                        setRenamingKey={setRenamingKey}
-                        setOpenCats={setOpenCats}
-                        beginRename={beginRename}
-                        handleRemoveCategory={handleRemoveCategory}
-                        query={query}
-                        selectedId={selectedId}
-                        renamingItemId={renamingItemId}
-                        renameItemValue={renameItemValue}
-                        setRenameItemValue={setRenameItemValue}
-                        commitRenameItem={commitRenameItem}
-                        setRenamingItemId={setRenamingItemId}
-                        onSelect={onSelect}
-                        beginRenameItem={beginRenameItem}
-                        handleRemoveItem={handleRemoveItem}
-                      />
-                    </DndContext>
+                    />
                   );
                 })}
               </div>
