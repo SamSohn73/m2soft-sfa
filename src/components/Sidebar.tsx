@@ -52,6 +52,8 @@ type Props = {
   onToggleCollapse?: () => void;
   width?: number;
   onWidthChange?: (width: number) => void;
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
 };
 
 type ConfirmState = {
@@ -73,7 +75,6 @@ function highlight(text: string, query: string) {
   );
 }
 
-// 카테고리 정렬 아이템
 function SortableCatItem({
   c, isOpen, items, renamingKey, renameValue,
   setRenameValue, commitRename, setRenamingKey,
@@ -101,7 +102,7 @@ function SortableCatItem({
   commitRenameItem: () => void;
   setRenamingItemId: (v: string | null) => void;
   onSelect: (p: Presentation) => void;
-beginRenameItem: (p: Presentation) => void;
+  beginRenameItem: (p: Presentation) => void;
   handleRemoveItem: (p: Presentation) => void;
   onItemDragEnd: (event: DragEndEvent) => void;
   sensors: ReturnType<typeof useSensors>;
@@ -172,7 +173,7 @@ beginRenameItem: (p: Presentation) => void;
         </ContextMenuContent>
       </ContextMenu>
 
-{isOpen && items.length > 0 && (
+      {isOpen && items.length > 0 && (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -185,19 +186,19 @@ beginRenameItem: (p: Presentation) => void;
             <ul className="ml-3 pl-3 border-l border-border/60 space-y-0.5 mt-0.5 mb-1">
               {items.map((p) => (
                 <SortablePresentationItem
-                key={p.id}
-                p={p}
-                active={selectedId === p.id}
-                renamingItemId={renamingItemId}
-                renameItemValue={renameItemValue}
-                setRenameItemValue={setRenameItemValue}
-                commitRenameItem={commitRenameItem}
-                setRenamingItemId={setRenamingItemId}
-                onSelect={onSelect}
-                beginRenameItem={beginRenameItem}
-                handleRemoveItem={handleRemoveItem}
-                query={query}
-              />
+                  key={p.id}
+                  p={p}
+                  active={selectedId === p.id}
+                  renamingItemId={renamingItemId}
+                  renameItemValue={renameItemValue}
+                  setRenameItemValue={setRenameItemValue}
+                  commitRenameItem={commitRenameItem}
+                  setRenamingItemId={setRenamingItemId}
+                  onSelect={onSelect}
+                  beginRenameItem={beginRenameItem}
+                  handleRemoveItem={handleRemoveItem}
+                  query={query}
+                />
               ))}
             </ul>
           </SortableContext>
@@ -207,7 +208,6 @@ beginRenameItem: (p: Presentation) => void;
   );
 }
 
-// 프레젠테이션 정렬 아이템
 function SortablePresentationItem({
   p, active, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
@@ -295,7 +295,7 @@ function SortablePresentationItem({
 export function Sidebar({
   selectedId, onSelect, onOpenUpload, onOpenPassword,
   open, onClose, collapsed = false, onToggleCollapse,
-  width = 280, onWidthChange,
+  width = 280, onWidthChange, onResizeStart, onResizeEnd,
 }: Props) {
   const navigate = useNavigate();
   const [list, setList] = useState<Presentation[]>([]);
@@ -310,10 +310,10 @@ export function Sidebar({
   const [dragging, setDragging] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-
   const [pendingCats, setPendingCats] = useState<Category[] | null>(null);
   const [pendingItems, setPendingItems] = useState<{ catKey: string; items: Presentation[] } | null>(null);
+
+  useEffect(() => { setMounted(true); }, []);
 
   const sensors = useSensors(useSensor(PointerSensor, {
     activationConstraint: { distance: 5 },
@@ -392,9 +392,9 @@ export function Sidebar({
 
   const handleRemoveCategory = (c: Category) => {
     const count = (grouped[c.key] ?? []).length;
-const msg =
+    const msg =
       count > 0
-        ? `"${c.label}" 메뉴에 ${count}개의 자료가 있습니다. 메뉴와 자료가 모두 삭제됩니다.`
+        ? `"${c.label}" 메뉴에 ${count}개의 자료가 있습니다. 메뉴와 자료를 모두 삭제할까요?`
         : `"${c.label}" 메뉴를 삭제할까요?`;
     if (window.confirm(msg)) {
       removeCategory(c.key).catch((e) =>
@@ -442,6 +442,7 @@ const msg =
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
     setDragging(true);
+    onResizeStart?.();
     const startX = e.clientX;
     const startWidth = width;
     const onMouseMove = (ev: MouseEvent) => {
@@ -450,6 +451,7 @@ const msg =
     };
     const onMouseUp = () => {
       setDragging(false);
+      onResizeEnd?.();
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     };
@@ -457,7 +459,6 @@ const msg =
     document.addEventListener("mouseup", onMouseUp);
   };
 
-  // 카테고리 드래그 종료
   const handleCatDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -477,7 +478,6 @@ const msg =
     });
   };
 
-  // 파일 드래그 종료
   const handleItemDragEnd = (catKey: string) => (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -516,7 +516,6 @@ const msg =
 
   return (
     <>
-      {/* 확인/취소 팝업 */}
       {confirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 w-72 animate-in fade-in zoom-in-95">

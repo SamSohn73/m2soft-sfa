@@ -25,6 +25,7 @@ function MainPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
 
   useEffect(() => {
     if (!isAuthed()) navigate({ to: "/" });
@@ -67,6 +68,8 @@ function MainPage() {
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         width={sidebarWidth}
         onWidthChange={setSidebarWidth}
+        onResizeStart={() => setSidebarResizing(true)}
+        onResizeEnd={() => setSidebarResizing(false)}
       />
 
       {sidebarCollapsed && (
@@ -92,7 +95,10 @@ function MainPage() {
           </span>
         </div>
 
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 relative">
+          {sidebarResizing && (
+            <div className="absolute inset-0 z-50" />
+          )}
           <Viewer presentation={selected} />
         </div>
       </main>
