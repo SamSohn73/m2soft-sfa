@@ -33,6 +33,8 @@ type Props = {
   onClose: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  width?: number;
+  onWidthChange?: (width: number) => void;
 };
 
 function highlight(text: string, query: string) {
@@ -52,6 +54,7 @@ function highlight(text: string, query: string) {
 export function Sidebar({
   selectedId, onSelect, onOpenUpload, onOpenPassword,
   open, onClose, collapsed = false, onToggleCollapse,
+  width = 280, onWidthChange,
 }: Props) {
   const navigate = useNavigate();
   const [list, setList] = useState<Presentation[]>([]);
@@ -63,8 +66,8 @@ export function Sidebar({
   const [renameValue, setRenameValue] = useState("");
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const [renameItemValue, setRenameItemValue] = useState("");
+  const [dragging, setDragging] = useState(false);
 
-  // 자료 목록 로드
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -80,7 +83,6 @@ export function Sidebar({
     };
   }, []);
 
-  // 카테고리 로드 (백엔드 API)
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -186,6 +188,27 @@ export function Sidebar({
     navigate({ to: "/" });
   };
 
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setDragging(true);
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const newWidth = Math.min(500, Math.max(200, startWidth + ev.clientX - startX));
+      onWidthChange?.(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setDragging(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
   return (
     <>
       {open && (
@@ -197,14 +220,25 @@ export function Sidebar({
 
       <aside
         className={[
-          "fixed lg:static z-40 inset-y-0 left-0 w-70",
+          "fixed lg:static z-40 inset-y-0 left-0 relative",
           "bg-sidebar text-sidebar-foreground border-r border-border flex flex-col",
-          "transition-all duration-300 ease-out",
+          dragging ? "" : "transition-all duration-300 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
           collapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0" : "",
         ].join(" ")}
+        style={{ width: collapsed ? undefined : `${width}px` }}
       >
+        {/* 드래그 핸들 */}
+        <div
+          onMouseDown={handleResizeStart}
+          className={[
+            "hidden lg:block absolute right-0 top-0 h-full w-1.5 cursor-col-resize z-50",
+            "hover:bg-brand/40 transition-colors",
+            dragging ? "bg-brand/60" : "",
+          ].join(" ")}
+        />
+
         {/* Logo */}
         <div className="px-5 pt-5 pb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">

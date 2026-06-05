@@ -24,6 +24,7 @@ function MainPage() {
   const [pwdOpen, setPwdOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
 
   useEffect(() => {
     if (!isAuthed()) navigate({ to: "/" });
@@ -64,6 +65,8 @@ function MainPage() {
         onClose={() => setSidebarOpen(false)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        width={sidebarWidth}
+        onWidthChange={setSidebarWidth}
       />
 
       {sidebarCollapsed && (
