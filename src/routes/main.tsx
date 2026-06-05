@@ -21,6 +21,7 @@ function MainPage() {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Presentation | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadCategory, setUploadCategory] = useState<string | undefined>(undefined);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -45,6 +46,11 @@ function MainPage() {
     return () => window.removeEventListener("m2:presentations", refresh);
   }, [selected]);
 
+  const handleOpenUpload = (categoryKey?: string) => {
+    setUploadCategory(categoryKey);
+    setUploadOpen(true);
+  };
+
   const btnCls = [
     "hidden lg:flex fixed left-0 top-6 z-50",
     "h-9 w-6 items-center justify-center",
@@ -60,7 +66,7 @@ function MainPage() {
           setSelected(p);
           setSidebarOpen(false);
         }}
-        onOpenUpload={() => setUploadOpen(true)}
+        onOpenUpload={handleOpenUpload}
         onOpenPassword={() => setPwdOpen(true)}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -103,7 +109,15 @@ function MainPage() {
         </div>
       </main>
 
-      {uploadOpen && <UploadModal onClose={() => setUploadOpen(false)} />}
+      {uploadOpen && (
+        <UploadModal
+          onClose={() => {
+            setUploadOpen(false);
+            setUploadCategory(undefined);
+          }}
+          defaultCategory={uploadCategory}
+        />
+      )}
       {pwdOpen && <PasswordModal onClose={() => setPwdOpen(false)} />}
     </div>
   );

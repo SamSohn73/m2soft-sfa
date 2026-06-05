@@ -8,10 +8,16 @@ import {
 } from "@/lib/store";
 import { X, Upload, Link as LinkIcon, FileText } from "lucide-react";
 
-export function UploadModal({ onClose }: { onClose: () => void }) {
+export function UploadModal({
+  onClose,
+  defaultCategory,
+}: {
+  onClose: () => void;
+  defaultCategory?: string;
+}) {
   const [mode, setMode] = useState<SourceType>("file");
   const [cats, setCats] = useState<Category[]>([]);
-  const [category, setCategory] = useState<string>("");
+  const [category, setCategory] = useState<string>(defaultCategory ?? "");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -20,7 +26,6 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 카테고리 비동기 로드
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -28,9 +33,10 @@ export function UploadModal({ onClose }: { onClose: () => void }) {
         .then((next) => {
           if (!cancelled) {
             setCats(next);
-            setCategory((cur) =>
-              next.some((c) => c.key === cur) ? cur : next[0]?.key ?? ""
-            );
+            setCategory((cur) => {
+              if (cur && next.some((c) => c.key === cur)) return cur;
+              return next[0]?.key ?? "";
+            });
           }
         })
         .catch((e) => console.error(e));

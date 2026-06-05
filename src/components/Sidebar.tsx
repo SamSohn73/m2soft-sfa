@@ -44,7 +44,7 @@ import {
 type Props = {
   selectedId: string | null;
   onSelect: (p: Presentation) => void;
-  onOpenUpload: () => void;
+  onOpenUpload: (categoryKey?: string) => void;
   onOpenPassword: () => void;
   open: boolean;
   onClose: () => void;
@@ -82,6 +82,7 @@ function SortableCatItem({
   selectedId, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
   onSelect, beginRenameItem, handleRemoveItem, onItemDragEnd, sensors,
+  onOpenUpload,
 }: {
   c: Category;
   isOpen: boolean;
@@ -106,6 +107,7 @@ function SortableCatItem({
   handleRemoveItem: (p: Presentation) => void;
   onItemDragEnd: (event: DragEndEvent) => void;
   sensors: ReturnType<typeof useSensors>;
+  onOpenUpload: (categoryKey?: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: c.key });
@@ -160,7 +162,10 @@ function SortableCatItem({
             )}
           </button>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-40">
+        <ContextMenuContent className="w-44">
+          <ContextMenuItem onClick={() => onOpenUpload(c.key)}>
+            <Plus className="h-4 w-4 mr-2 text-brand" /> 프리젠테이션 등록
+          </ContextMenuItem>
           <ContextMenuItem onClick={() => beginRename(c)}>
             <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
           </ContextMenuItem>
@@ -605,7 +610,7 @@ export function Sidebar({
         {/* Upload button */}
         <div className="px-4">
           <button
-            onClick={onOpenUpload}
+            onClick={() => onOpenUpload()}
             className="w-full h-11 rounded-xl gradient-brand text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[.98] transition glow-brand"
           >
             <Plus className="h-4 w-4" /> 프리젠테이션 등록
@@ -667,6 +672,7 @@ export function Sidebar({
                       handleRemoveItem={handleRemoveItem}
                       onItemDragEnd={handleItemDragEnd(c.key)}
                       sensors={sensors}
+                      onOpenUpload={onOpenUpload}
                     />
                   );
                 })}
