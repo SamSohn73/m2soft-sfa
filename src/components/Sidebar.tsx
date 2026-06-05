@@ -392,9 +392,9 @@ export function Sidebar({
 
   const handleRemoveCategory = (c: Category) => {
     const count = (grouped[c.key] ?? []).length;
-    const msg =
+const msg =
       count > 0
-        ? `"${c.label}" 메뉴에 ${count}개의 자료가 있습니다. 메뉴를 삭제해도 자료는 남지만 보이지 않게 됩니다. 계속할까요?`
+        ? `"${c.label}" 메뉴에 ${count}개의 자료가 있습니다. 메뉴와 자료가 모두 삭제됩니다.`
         : `"${c.label}" 메뉴를 삭제할까요?`;
     if (window.confirm(msg)) {
       removeCategory(c.key).catch((e) =>

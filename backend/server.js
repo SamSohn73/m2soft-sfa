@@ -259,13 +259,42 @@ app.patch("/api/categories/:key", requirePassword, (req, res) => {
   }
 });
 
-app.delete("/api/categories/:key", requirePassword, (req, res) => {
+app.delete("/api/categories/:key", requirePassword, async (req, res) => {
   try {
-    const cats = getCatsForTeam(req.team);
-    const next = cats.filter((c) => c.key !== req.params.key);
-    const all = readAllCats();
-    all[req.team] = next;
-    writeAllCats(all);
+    await serialize(async () => {
+      // 카테고리 목록에서 제거
+      const cats = getCatsForTeam(req.team);
+      const next = cats.filter((c) => c.key !== req.params.key);
+      const all = readAllCats();
+      all[req.team] = next;
+      writeAllCats(all);
+
+      // 해당 카테고리의 파일 목록 조회
+      const list = readAll();
+      const targets = list.filter(
+        (p) => p.category === req.params.key && p.team === req.team
+      );
+      const remaining = list.filter(
+        (p) => !(p.category === req.params.key && p.team === req.team)
+      );
+
+      // CSV에서 해당 항목 제거
+      writeAll(remaining);
+
+      // 실제 파일 삭제 (다른 항목에서 참조하지 않는 파일만)
+      for (const target of targets) {
+        if (target.sourceType !== "file") continue;
+        const stillReferenced = remaining.some(
+          (p) => p.sourceType === "file" && p.src === target.src
+        );
+        if (!stillReferenced) {
+          const abs = path.join(__dirname, target.src);
+          if (abs.startsWith(UPLOAD_DIR) && fs.existsSync(abs)) {
+            try { fs.unlinkSync(abs); } catch {}
+          }
+        }
+      }
+    });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
