@@ -34,3 +34,5 @@ dist-ssr
 # Backend data & uploads (서버 데이터는 GitHub에 올리지 않음)
 backend/data/
 backend/uploads/
+
+package-lock.json
