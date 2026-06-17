@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { buildViewerUrl } from "@/lib/viewer";
 import type { Presentation } from "@/lib/store";
 import { FileQuestion, Download, ExternalLink } from "lucide-react";
-
 
 async function triggerDownload(src: string, fileName: string) {
   try {
@@ -20,8 +20,9 @@ async function triggerDownload(src: string, fileName: string) {
   }
 }
 
-
 export function Viewer({ presentation }: { presentation: Presentation | null }) {
+  const [headerVisible, setHeaderVisible] = useState(false);
+
   if (!presentation) {
     return (
       <div className="h-full grid place-items-center text-center px-6">
@@ -31,8 +32,9 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
           </div>
           <h2 className="text-2xl font-bold mb-2">문서를 선택하세요</h2>
           <p className="text-muted-foreground text-sm">
-            좌측 사이드바에서 <span className="text-brand font-semibold">프리젠테이션 등록</span> 버튼을 눌러
-            PDF, Word, Excel, PPT, 이미지, 유튜브, Google Drive 링크 등을 추가하세요.
+            좌측 사이드바에서{" "}
+            <span className="text-brand font-semibold">프리젠테이션 등록</span>{" "}
+            버튼을 눌러 PDF, Word, Excel, PPT, 이미지, 유튜브, Google Drive 링크 등을 추가하세요.
           </p>
         </div>
       </div>
@@ -42,8 +44,24 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
   const { kind, url } = buildViewerUrl(presentation);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-card/40">
+    <div className="h-full flex flex-col relative">
+      {/* 마우스 감지 영역 (최상단 4px) */}
+      <div
+        className="absolute top-0 left-0 right-0 h-1 z-20"
+        onMouseEnter={() => setHeaderVisible(true)}
+      />
+
+      {/* 슬라이딩 헤더 */}
+      <div
+        className={[
+          "absolute top-0 left-0 right-0 z-10",
+          "flex items-center justify-between gap-3 px-5 py-3",
+          "border-b border-border bg-card/95 backdrop-blur-sm shadow-md",
+          "transition-transform duration-300 ease-in-out",
+          headerVisible ? "translate-y-0" : "-translate-y-full",
+        ].join(" ")}
+        onMouseLeave={() => setHeaderVisible(false)}
+      >
         <div className="min-w-0">
           <h2 className="font-semibold truncate">{presentation.name}</h2>
           <p className="text-xs text-muted-foreground truncate">
@@ -61,7 +79,8 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
               }
               className="h-9 px-3 rounded-lg border border-border hover:bg-accent transition flex items-center gap-1.5 text-sm"
             >
-              <Download className="h-4 w-4" /> <span className="hidden sm:inline">다운로드</span>
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">다운로드</span>
             </button>
           )}
           {presentation.sourceType === "url" && (
@@ -71,12 +90,14 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
               rel="noreferrer"
               className="h-9 px-3 rounded-lg border border-border hover:bg-accent transition flex items-center gap-1.5 text-sm"
             >
-              <ExternalLink className="h-4 w-4" /> <span className="hidden sm:inline">새 탭</span>
+              <ExternalLink className="h-4 w-4" />
+              <span className="hidden sm:inline">새 탭</span>
             </a>
           )}
         </div>
       </div>
 
+      {/* 뷰어 본문 */}
       <div className="flex-1 min-h-0 bg-content">
         <ViewerBody kind={kind} url={url} presentation={presentation} />
       </div>
@@ -96,7 +117,11 @@ function ViewerBody({
   if (kind === "image") {
     return (
       <div className="h-full w-full overflow-auto grid place-items-center p-4">
-        <img src={url} alt={presentation.name} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+        <img
+          src={url}
+          alt={presentation.name}
+          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+        />
       </div>
     );
   }
@@ -135,7 +160,6 @@ function ViewerBody({
       </div>
     );
   }
-  // pdf, youtube, gdrive, office(url), webpage, unknown(file)
   return (
     <iframe
       src={url}
