@@ -7,15 +7,18 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { parse as csvParse } from "csv-parse/sync";
 import { stringify as csvStringify } from "csv-stringify/sync";
+import geoip from "geoip-lite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const LOG_DIR = path.join(__dirname, "logs");
 const CSV_PATH = path.join(DATA_DIR, "presentations.csv");
 const CATS_PATH = path.join(DATA_DIR, "categories.json");
+const ACCESS_LOG_PATH = path.join(LOG_DIR, "access.log");
+const DEBUG_LOG_PATH = path.join(LOG_DIR, "debug.log");
 
 const PORT = Number(process.env.PORT) || 4000;
-
 
 const PWD_PATH = path.join(DATA_DIR, "passwords.json");
 
@@ -24,11 +27,93 @@ const DEFAULT_PASSWORDS = {
   eng:   { admin: "2188em", viewer: "2188e" },
 };
 
+// ------- 디렉토리 초기화 -------
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(LOG_DIR, { recursive: true });
+
+// ------- 로깅 -------
+function getTimestamp() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ` +
+         `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
+function getGeoInfo(ip) {
+  try {
+    const cleanIp = ip === "::1" || ip === "127.0.0.1" ? "127.0.0.1" : ip.replace(/^::ffff:/, "");
+    if (cleanIp === "127.0.0.1" || cleanIp.startsWith("192.168.") ||
+        cleanIp.startsWith("10.") || cleanIp.startsWith("172.")) {
+      return "내부망";
+    }
+    const geo = geoip.lookup(cleanIp);
+    if (!geo) return "알 수 없음";
+    const parts = [geo.country];
+    if (geo.city) parts.push(geo.city);
+    if (geo.org) parts.push(geo.org.replace(/^AS\d+\s+/, ""));
+    return parts.join(" ");
+  } catch {
+    return "알 수 없음";
+  }
+}
+
+function getBrowserInfo(userAgent) {
+  if (!userAgent) return "알 수 없음";
+  let browser = "기타";
+  let os = "기타";
+
+  if (userAgent.includes("Edg/")) browser = "Edge";
+  else if (userAgent.includes("Chrome/")) browser = "Chrome";
+  else if (userAgent.includes("Firefox/")) browser = "Firefox";
+  else if (userAgent.includes("Safari/")) browser = "Safari";
+
+  const versionMatch = userAgent.match(/(Chrome|Firefox|Edg|Safari)\/(\d+)/);
+  if (versionMatch) browser += ` ${versionMatch[2]}`;
+
+  if (userAgent.includes("Windows")) os = "Windows";
+  else if (userAgent.includes("Mac OS X")) os = "MacOS";
+  else if (userAgent.includes("Linux")) os = "Linux";
+  else if (userAgent.includes("Android")) os = "Android";
+  else if (userAgent.includes("iPhone") || userAgent.includes("iPad")) os = "iOS";
+
+  return `${browser} ${os}`;
+}
+
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return req.socket?.remoteAddress || "알 수 없음";
+}
+
+function writeLog(filePath, line) {
+  try {
+    fs.appendFileSync(filePath, line + "\n", "utf8");
+  } catch {}
+}
+
+function logDebug(req, statusCode, ms) {
+  const ip = getClientIp(req);
+  const line = `${getTimestamp()} | ${req.method} ${req.path} | ${ip} | ${statusCode} | ${ms}ms`;
+  writeLog(DEBUG_LOG_PATH, line);
+}
+
+function logAccess(req, action, detail = "") {
+  const ip = getClientIp(req);
+  const geo = getGeoInfo(ip);
+  const browser = getBrowserInfo(req.headers["user-agent"]);
+  const team = req.team || "-";
+  const role = req.role || "-";
+  const detailStr = detail ? ` | ${detail}` : "";
+  const line = `${getTimestamp()} | ${ip} | ${geo} | ${team}/${role} | ${browser} | ${action}${detailStr}`;
+  writeLog(ACCESS_LOG_PATH, line);
+}
+
+// ------- Password helpers -------
 function readPasswords() {
   try {
     if (fs.existsSync(PWD_PATH)) {
       const raw = JSON.parse(fs.readFileSync(PWD_PATH, "utf8"));
-      // Migrate flat {sales:"...", eng:"..."} → nested {sales:{admin,viewer}, ...}
       const migrated = {};
       let needsWrite = false;
       for (const team of ["sales", "eng"]) {
@@ -79,8 +164,7 @@ function teamForPassword(pwd) {
   return null;
 }
 
-
-
+// ------- CSV helpers -------
 const DEFAULT_CATEGORIES = [
   { key: "company", label: "회사소개" },
   { key: "strategy", label: "전략기획" },
@@ -95,8 +179,6 @@ const CSV_HEADERS = [
   "src", "mime", "fileName", "createdAt", "team", "openMode",
 ];
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 if (!fs.existsSync(CSV_PATH)) {
   fs.writeFileSync(CSV_PATH, csvStringify([CSV_HEADERS]), "utf8");
 }
@@ -104,7 +186,6 @@ if (!fs.existsSync(CATS_PATH)) {
   fs.writeFileSync(CATS_PATH, JSON.stringify({}), "utf8");
 }
 
-// ------- CSV helpers -------
 let chain = Promise.resolve();
 function serialize(task) {
   const next = chain.then(task, task);
@@ -173,6 +254,15 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
+// debug.log 미들웨어
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    logDebug(req, res.statusCode, Date.now() - start);
+  });
+  next();
+});
+
 function requirePassword(req, res, next) {
   const auth = teamForPassword(req.header("x-app-password"));
   if (!auth) return res.status(401).json({ error: "unauthorized" });
@@ -194,12 +284,19 @@ function publicizeFileSrc(req, p) {
   return { ...p, src: `${base}/api/files/${p.id}${qs}` };
 }
 
-
 // --- Auth ---
 app.post("/api/login", (req, res) => {
   const { password } = req.body || {};
   const auth = teamForPassword(password);
-  if (auth) return res.json({ ok: true, team: auth.team, role: auth.role });
+  if (auth) {
+    req.team = auth.team;
+    req.role = auth.role;
+    logAccess(req, "LOGIN_SUCCESS");
+    return res.json({ ok: true, team: auth.team, role: auth.role });
+  }
+  req.team = "-";
+  req.role = "-";
+  logAccess(req, "LOGIN_FAIL");
   return res.status(401).json({ ok: false });
 });
 
@@ -210,20 +307,13 @@ app.post("/api/change-password", requirePassword, requireAdmin, (req, res) => {
       return res.status(400).json({ error: "invalid" });
     }
     const trimmed = String(newPassword).trim();
-
-    // 최소 길이 검증
     if (trimmed.length < 4) {
       return res.status(400).json({ error: "invalid" });
     }
-
     const pwds = readPasswords();
-
-    // 현재(관리자) 비밀번호 확인
     if (pwds[req.team]?.admin !== String(currentPassword)) {
       return res.status(400).json({ error: "invalid" });
     }
-
-    // 다른 어떤 비밀번호와도 중복되면 거부
     for (const t of TEAMS) {
       for (const r of ROLES) {
         if (pwds[t]?.[r] === trimmed) {
@@ -231,16 +321,14 @@ app.post("/api/change-password", requirePassword, requireAdmin, (req, res) => {
         }
       }
     }
-
     pwds[req.team].admin = trimmed;
     writePasswords(pwds);
+    logAccess(req, "PASSWORD_CHANGE");
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: "invalid" });
   }
 });
-
-
 
 // --- Categories ---
 app.get("/api/categories", requirePassword, (req, res) => {
@@ -268,6 +356,7 @@ app.post("/api/categories", requirePassword, requireAdmin, (req, res) => {
     const all = readAllCats();
     all[req.team] = cats;
     writeAllCats(all);
+    logAccess(req, "CATEGORY_ADD", trimmed);
     res.json(newCat);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -287,10 +376,12 @@ app.patch("/api/categories/:key", requirePassword, requireAdmin, (req, res) => {
     }
     const idx = cats.findIndex((c) => c.key === req.params.key);
     if (idx === -1) return res.status(404).json({ error: "not found" });
+    const oldLabel = cats[idx].label;
     cats[idx] = { ...cats[idx], label: trimmed };
     const all = readAllCats();
     all[req.team] = cats;
     writeAllCats(all);
+    logAccess(req, "CATEGORY_RENAME", `${oldLabel} → ${trimmed}`);
     res.json(cats[idx]);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -299,15 +390,16 @@ app.patch("/api/categories/:key", requirePassword, requireAdmin, (req, res) => {
 
 app.delete("/api/categories/:key", requirePassword, requireAdmin, async (req, res) => {
   try {
+    let deletedLabel = "";
     await serialize(async () => {
-      // 카테고리 목록에서 제거
       const cats = getCatsForTeam(req.team);
+      const target = cats.find((c) => c.key === req.params.key);
+      deletedLabel = target?.label || req.params.key;
       const next = cats.filter((c) => c.key !== req.params.key);
       const all = readAllCats();
       all[req.team] = next;
       writeAllCats(all);
 
-      // 해당 카테고리의 파일 목록 조회
       const list = readAll();
       const targets = list.filter(
         (p) => p.category === req.params.key && p.team === req.team
@@ -315,24 +407,22 @@ app.delete("/api/categories/:key", requirePassword, requireAdmin, async (req, re
       const remaining = list.filter(
         (p) => !(p.category === req.params.key && p.team === req.team)
       );
-
-      // CSV에서 해당 항목 제거
       writeAll(remaining);
 
-      // 실제 파일 삭제 (다른 항목에서 참조하지 않는 파일만)
-      for (const target of targets) {
-        if (target.sourceType !== "file") continue;
+      for (const t of targets) {
+        if (t.sourceType !== "file") continue;
         const stillReferenced = remaining.some(
-          (p) => p.sourceType === "file" && p.src === target.src
+          (p) => p.sourceType === "file" && p.src === t.src
         );
         if (!stillReferenced) {
-          const abs = path.join(__dirname, target.src);
+          const abs = path.join(__dirname, t.src);
           if (abs.startsWith(UPLOAD_DIR) && fs.existsSync(abs)) {
             try { fs.unlinkSync(abs); } catch {}
           }
         }
       }
     });
+    logAccess(req, "CATEGORY_DELETE", deletedLabel);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -354,10 +444,10 @@ app.get("/api/presentations", requirePassword, (req, res) => {
 app.get("/api/files/:id", (req, res) => {
   try {
     const pwd = req.header("x-app-password") || req.query.pwd;
-    const team = teamForPassword(pwd);
-    if (!team) return res.status(401).send("unauthorized");
+    const auth = teamForPassword(pwd);
+    if (!auth) return res.status(401).send("unauthorized");
     const item = readAll().find(
-      (p) => p.id === req.params.id && p.sourceType === "file" && p.team === team,
+      (p) => p.id === req.params.id && p.sourceType === "file" && p.team === auth.team,
     );
     if (!item) return res.status(404).send("not found");
     const abs = path.join(__dirname, item.src);
@@ -368,6 +458,9 @@ app.get("/api/files/:id", (req, res) => {
       "Content-Disposition",
       `inline; filename*=UTF-8''${encodeURIComponent(item.fileName || item.name)}`,
     );
+    req.team = auth.team;
+    req.role = auth.role;
+    logAccess(req, "FILE_VIEW", item.name);
     fs.createReadStream(abs).pipe(res);
   } catch (e) {
     res.status(500).send(String(e?.message || e));
@@ -422,6 +515,7 @@ app.post("/api/presentations", requirePassword, requireAdmin, upload.single("fil
       list.push(entry);
       writeAll(list);
     });
+    logAccess(req, "FILE_UPLOAD", entry.name);
     res.json(publicizeFileSrc(req, entry));
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -430,13 +524,15 @@ app.post("/api/presentations", requirePassword, requireAdmin, upload.single("fil
 
 app.delete("/api/presentations/:id", requirePassword, requireAdmin, async (req, res) => {
   try {
+    let deletedName = "";
     await serialize(async () => {
       const list = readAll();
       const target = list.find((p) => p.id === req.params.id && p.team === req.team);
       if (!target) return;
+      deletedName = target.name;
       const next = list.filter((p) => p.id !== req.params.id);
       writeAll(next);
-      if (target && target.sourceType === "file") {
+      if (target.sourceType === "file") {
         const stillReferenced = next.some((p) => p.sourceType === "file" && p.src === target.src);
         if (!stillReferenced) {
           const abs = path.join(__dirname, target.src);
@@ -446,6 +542,7 @@ app.delete("/api/presentations/:id", requirePassword, requireAdmin, async (req, 
         }
       }
     });
+    logAccess(req, "FILE_DELETE", deletedName);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -459,10 +556,12 @@ app.patch("/api/presentations/:id", requirePassword, requireAdmin, async (req, r
       return res.status(400).json({ error: "name or openMode required" });
     }
     let updated = null;
+    let oldName = "";
     await serialize(async () => {
       const list = readAll();
       const idx = list.findIndex((p) => p.id === req.params.id && p.team === req.team);
       if (idx === -1) return;
+      oldName = list[idx].name;
       if (name && String(name).trim()) {
         list[idx] = { ...list[idx], name: String(name).trim() };
       }
@@ -473,13 +572,17 @@ app.patch("/api/presentations/:id", requirePassword, requireAdmin, async (req, r
       writeAll(list);
     });
     if (!updated) return res.status(404).json({ error: "not found" });
+    if (name && name !== oldName) {
+      logAccess(req, "FILE_RENAME", `${oldName} → ${updated.name}`);
+    }
+    if (openMode) {
+      logAccess(req, "FILE_OPENMODE_CHANGE", `${updated.name} → ${openMode}`);
+    }
     res.json(publicizeFileSrc(req, updated));
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
-
-
 
 // 카테고리 순서 변경
 app.put("/api/categories/reorder", requirePassword, requireAdmin, (req, res) => {
@@ -493,6 +596,7 @@ app.put("/api/categories/reorder", requirePassword, requireAdmin, (req, res) => 
     const all = readAllCats();
     all[req.team] = reordered;
     writeAllCats(all);
+    logAccess(req, "CATEGORY_REORDER");
     res.json(reordered);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
@@ -514,19 +618,19 @@ app.put("/api/presentations/reorder", requirePassword, requireAdmin, async (req,
       const unchanged = teamItems.filter((p) => !ids.includes(p.id));
       writeAll([...otherItems, ...reordered, ...unchanged]);
     });
+    logAccess(req, "FILE_REORDER");
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
 });
 
-
-
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
   console.log(`[M2SOFT SFA backend] listening on http://0.0.0.0:${PORT}`);
-  console.log(`  CSV : ${CSV_PATH}`);
-  console.log(`  CATS: ${CATS_PATH}`);
+  console.log(`  CSV  : ${CSV_PATH}`);
+  console.log(`  CATS : ${CATS_PATH}`);
   console.log(`  Files: ${UPLOAD_DIR}`);
+  console.log(`  Logs : ${LOG_DIR}`);
 });
