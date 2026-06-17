@@ -20,6 +20,7 @@ import {
   getCategories,
   getPresentations,
   getTeam,
+  isAdmin,
   removePresentation,
   removeCategory,
   renameCategory,
@@ -83,7 +84,7 @@ function SortableCatItem({
   selectedId, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
   onSelect, beginRenameItem, handleRemoveItem, onItemDragEnd, sensors,
-  onOpenUpload, onChangeOpenMode,
+  onOpenUpload, onChangeOpenMode, admin,
 }: {
   c: Category;
   isOpen: boolean;
@@ -110,6 +111,7 @@ function SortableCatItem({
   sensors: ReturnType<typeof useSensors>;
   onOpenUpload: (categoryKey?: string) => void;
   onChangeOpenMode: (p: Presentation) => void;
+  admin: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: c.key });
@@ -128,14 +130,16 @@ function SortableCatItem({
             onClick={() => setOpenCats((s) => ({ ...s, [c.key]: !s[c.key] }))}
             className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-sidebar-hover transition group"
           >
-            <span
-              {...attributes}
-              {...listeners}
-              onClick={(e) => e.stopPropagation()}
-              className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-brand transition"
-            >
-              <GripVertical className="h-3.5 w-3.5" />
-            </span>
+            {admin && (
+              <span
+                {...attributes}
+                {...listeners}
+                onClick={(e) => e.stopPropagation()}
+                className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-brand transition"
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </span>
+            )}
             {isOpen ? (
               <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-brand transition" />
             ) : (
@@ -164,20 +168,22 @@ function SortableCatItem({
             )}
           </button>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-44">
-          <ContextMenuItem onClick={() => onOpenUpload(c.key)}>
-            <Plus className="h-4 w-4 mr-2 text-brand" /> 프리젠테이션 등록
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => beginRename(c)}>
-            <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => handleRemoveCategory(c)}
-            className="text-destructive focus:text-destructive"
-          >
-            <Trash2 className="h-4 w-4 mr-2" /> 삭제
-          </ContextMenuItem>
-        </ContextMenuContent>
+        {admin && (
+          <ContextMenuContent className="w-44">
+            <ContextMenuItem onClick={() => onOpenUpload(c.key)}>
+              <Plus className="h-4 w-4 mr-2 text-brand" /> 프리젠테이션 등록
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => beginRename(c)}>
+              <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => handleRemoveCategory(c)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4 mr-2" /> 삭제
+            </ContextMenuItem>
+          </ContextMenuContent>
+        )}
       </ContextMenu>
 
       {isOpen && items.length > 0 && (
@@ -206,6 +212,7 @@ function SortableCatItem({
                   handleRemoveItem={handleRemoveItem}
                   onChangeOpenMode={onChangeOpenMode}
                   query={query}
+                  admin={admin}
                 />
               ))}
             </ul>
@@ -219,7 +226,7 @@ function SortableCatItem({
 function SortablePresentationItem({
   p, active, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
-  onSelect, beginRenameItem, handleRemoveItem, onChangeOpenMode, query,
+  onSelect, beginRenameItem, handleRemoveItem, onChangeOpenMode, query, admin,
 }: {
   p: Presentation;
   active: boolean;
@@ -233,6 +240,7 @@ function SortablePresentationItem({
   handleRemoveItem: (p: Presentation) => void;
   onChangeOpenMode: (p: Presentation) => void;
   query: string;
+  admin: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: p.id });
@@ -251,13 +259,17 @@ function SortablePresentationItem({
             "group flex items-center gap-1 rounded-lg pr-1 transition",
             active ? "bg-brand/15 text-brand" : "hover:bg-sidebar-hover text-sidebar-foreground",
           ].join(" ")}>
-            <span
-              {...attributes}
-              {...listeners}
-              className="pl-1 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-brand transition shrink-0"
-            >
-              <GripVertical className="h-3 w-3" />
-            </span>
+            {admin ? (
+              <span
+                {...attributes}
+                {...listeners}
+                className="pl-1 cursor-grab active:cursor-grabbing text-muted-foreground hover:text-brand transition shrink-0"
+              >
+                <GripVertical className="h-3 w-3" />
+              </span>
+            ) : (
+              <span className="pl-2 shrink-0" />
+            )}
             {renamingItemId === p.id ? (
               <div className="flex-1 min-w-0 flex items-center gap-2 px-1.5 py-2">
                 <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
@@ -285,20 +297,22 @@ function SortablePresentationItem({
             )}
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-44">
-          <ContextMenuItem onClick={() => beginRenameItem(p)}>
-            <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => onChangeOpenMode(p)}>
-            <ExternalLink className="h-4 w-4 mr-2 text-brand" /> 열기 방식 변경
-          </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => handleRemoveItem(p)}
-            className="text-destructive focus:text-destructive"
-          >
-            <Trash2 className="h-4 w-4 mr-2" /> 삭제
-          </ContextMenuItem>
-        </ContextMenuContent>
+        {admin && (
+          <ContextMenuContent className="w-44">
+            <ContextMenuItem onClick={() => beginRenameItem(p)}>
+              <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => onChangeOpenMode(p)}>
+              <ExternalLink className="h-4 w-4 mr-2 text-brand" /> 열기 방식 변경
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => handleRemoveItem(p)}
+              className="text-destructive focus:text-destructive"
+            >
+              <Trash2 className="h-4 w-4 mr-2" /> 삭제
+            </ContextMenuItem>
+          </ContextMenuContent>
+        )}
       </ContextMenu>
     </li>
   );
@@ -310,6 +324,7 @@ export function Sidebar({
   width = 280, onWidthChange, onResizeStart, onResizeEnd,
 }: Props) {
   const navigate = useNavigate();
+  const admin = isAdmin();
   const [list, setList] = useState<Presentation[]>([]);
   const [cats, setCats] = useState<Category[]>([]);
   const [query, setQuery] = useState("");
@@ -473,6 +488,7 @@ export function Sidebar({
   };
 
   const handleCatDragEnd = (event: DragEndEvent) => {
+    if (!admin) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = cats.findIndex((c) => c.key === active.id);
@@ -492,6 +508,7 @@ export function Sidebar({
   };
 
   const handleItemDragEnd = (catKey: string) => (event: DragEndEvent) => {
+    if (!admin) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const items = grouped[catKey] ?? [];
@@ -625,14 +642,16 @@ export function Sidebar({
         </div>
 
         {/* Upload button */}
-        <div className="px-4">
-          <button
-            onClick={() => onOpenUpload()}
-            className="w-full h-11 rounded-xl gradient-brand text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[.98] transition glow-brand"
-          >
-            <Plus className="h-4 w-4" /> 프리젠테이션 등록
-          </button>
-        </div>
+        {admin && (
+          <div className="px-4">
+            <button
+              onClick={() => onOpenUpload()}
+              className="w-full h-11 rounded-xl gradient-brand text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[.98] transition glow-brand"
+            >
+              <Plus className="h-4 w-4" /> 프리젠테이션 등록
+            </button>
+          </div>
+        )}
 
         {/* Search */}
         <div className="px-4 mt-4">
@@ -691,6 +710,7 @@ export function Sidebar({
                       sensors={sensors}
                       onOpenUpload={onOpenUpload}
                       onChangeOpenMode={setOpenModeTarget}
+                      admin={admin}
                     />
                   );
                 })}
@@ -701,11 +721,13 @@ export function Sidebar({
             <ContextMenuTrigger asChild>
               <div className="flex-1 min-h-20" />
             </ContextMenuTrigger>
-            <ContextMenuContent className="w-40">
-              <ContextMenuItem onClick={handleAddCategory}>
-                <FolderPlus className="h-4 w-4 mr-2 text-brand" /> 메뉴추가
-              </ContextMenuItem>
-            </ContextMenuContent>
+            {admin && (
+              <ContextMenuContent className="w-40">
+                <ContextMenuItem onClick={handleAddCategory}>
+                  <FolderPlus className="h-4 w-4 mr-2 text-brand" /> 메뉴추가
+                </ContextMenuItem>
+              </ContextMenuContent>
+            )}
           </ContextMenu>
         </nav>
 
@@ -713,15 +735,17 @@ export function Sidebar({
         <div className="relative border-t border-border p-3">
           {menuOpen && (
             <div className="absolute bottom-full left-3 right-3 mb-2 rounded-xl bg-popover border border-border shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-              <button
-                onClick={() => { setMenuOpen(false); onOpenPassword(); }}
-                className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm"
-              >
-                <KeyRound className="h-4 w-4 text-brand" /> 비밀번호 변경
-              </button>
+              {admin && (
+                <button
+                  onClick={() => { setMenuOpen(false); onOpenPassword(); }}
+                  className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm"
+                >
+                  <KeyRound className="h-4 w-4 text-brand" /> 비밀번호 변경
+                </button>
+              )}
               <button
                 onClick={logout}
-                className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm border-t border-border"
+                className={`w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm ${admin ? "border-t border-border" : ""}`}
               >
                 <LogOut className="h-4 w-4 text-destructive" /> 로그아웃
               </button>
