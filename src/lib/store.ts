@@ -1,5 +1,6 @@
 export type SourceType = "file" | "url";
 export type Team = "sales" | "eng";
+export type Role = "admin" | "viewer";
 
 export const TEAM_LABELS: Record<Team, string> = {
   sales: "영업팀",
@@ -26,6 +27,7 @@ export type Category = { key: string; label: string };
 const PWD_KEY = "m2_pwd";
 const AUTH_KEY = "m2_auth";
 const TEAM_KEY = "m2_team";
+const ROLE_KEY = "m2_role";
 
 const isBrowser = () => typeof window !== "undefined";
 
@@ -55,6 +57,7 @@ export function setAuthed(v: boolean) {
   else {
     sessionStorage.removeItem(AUTH_KEY);
     sessionStorage.removeItem(TEAM_KEY);
+    sessionStorage.removeItem(ROLE_KEY);
     setStoredPassword("");
   }
 }
@@ -69,6 +72,22 @@ function setTeam(t: Team | null) {
   if (!isBrowser()) return;
   if (t) sessionStorage.setItem(TEAM_KEY, t);
   else sessionStorage.removeItem(TEAM_KEY);
+}
+
+export function getRole(): Role | null {
+  if (!isBrowser()) return null;
+  const r = sessionStorage.getItem(ROLE_KEY);
+  return r === "admin" || r === "viewer" ? r : null;
+}
+
+function setRole(r: Role | null) {
+  if (!isBrowser()) return;
+  if (r) sessionStorage.setItem(ROLE_KEY, r);
+  else sessionStorage.removeItem(ROLE_KEY);
+}
+
+export function isAdmin(): boolean {
+  return getRole() === "admin";
 }
 
 function notifyCategories() {
@@ -89,10 +108,12 @@ export async function login(password: string): Promise<boolean> {
       body: JSON.stringify({ password }),
     });
     if (!res.ok) return false;
-    const data = (await res.json().catch(() => ({}))) as { team?: Team };
+    const data = (await res.json().catch(() => ({}))) as { team?: Team; role?: Role };
     if (data.team !== "sales" && data.team !== "eng") return false;
+    if (data.role !== "admin" && data.role !== "viewer") return false;
     setStoredPassword(password);
     setTeam(data.team);
+    setRole(data.role);
     setAuthed(true);
     return true;
   } catch {

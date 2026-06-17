@@ -19,15 +19,45 @@ const PORT = Number(process.env.PORT) || 4000;
 
 const PWD_PATH = path.join(DATA_DIR, "passwords.json");
 
+const DEFAULT_PASSWORDS = {
+  sales: { admin: "2188sm", viewer: "2188s" },
+  eng:   { admin: "2188em", viewer: "2188e" },
+};
+
 function readPasswords() {
   try {
     if (fs.existsSync(PWD_PATH)) {
-      return JSON.parse(fs.readFileSync(PWD_PATH, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(PWD_PATH, "utf8"));
+      // Migrate flat {sales:"...", eng:"..."} → nested {sales:{admin,viewer}, ...}
+      const migrated = {};
+      let needsWrite = false;
+      for (const team of ["sales", "eng"]) {
+        const v = raw?.[team];
+        if (v && typeof v === "object" && typeof v.admin === "string" && typeof v.viewer === "string") {
+          migrated[team] = { admin: v.admin, viewer: v.viewer };
+        } else if (typeof v === "string") {
+          migrated[team] = { admin: DEFAULT_PASSWORDS[team].admin, viewer: v };
+          needsWrite = true;
+        } else {
+          migrated[team] = { ...DEFAULT_PASSWORDS[team] };
+          needsWrite = true;
+        }
+      }
+      if (needsWrite) {
+        try { fs.writeFileSync(PWD_PATH, JSON.stringify(migrated, null, 2), "utf8"); } catch {}
+      }
+      return migrated;
     }
   } catch {}
   return {
-    sales: process.env.APP_PASSWORD_SALES || "2188s",
-    eng: process.env.APP_PASSWORD_ENG || "2188e",
+    sales: {
+      admin:  process.env.APP_PASSWORD_SALES_ADMIN  || DEFAULT_PASSWORDS.sales.admin,
+      viewer: process.env.APP_PASSWORD_SALES        || DEFAULT_PASSWORDS.sales.viewer,
+    },
+    eng: {
+      admin:  process.env.APP_PASSWORD_ENG_ADMIN    || DEFAULT_PASSWORDS.eng.admin,
+      viewer: process.env.APP_PASSWORD_ENG          || DEFAULT_PASSWORDS.eng.viewer,
+    },
   };
 }
 
@@ -36,11 +66,16 @@ function writePasswords(data) {
 }
 
 const TEAMS = ["sales", "eng"];
+const ROLES = ["admin", "viewer"];
 
 function teamForPassword(pwd) {
   if (!pwd) return null;
   const pwds = readPasswords();
-  for (const t of TEAMS) if (pwds[t] === pwd) return t;
+  for (const t of TEAMS) {
+    for (const r of ROLES) {
+      if (pwds[t]?.[r] === pwd) return { team: t, role: r };
+    }
+  }
   return null;
 }
 
@@ -139,9 +174,15 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 function requirePassword(req, res, next) {
-  const team = teamForPassword(req.header("x-app-password"));
-  if (!team) return res.status(401).json({ error: "unauthorized" });
-  req.team = team;
+  const auth = teamForPassword(req.header("x-app-password"));
+  if (!auth) return res.status(401).json({ error: "unauthorized" });
+  req.team = auth.team;
+  req.role = auth.role;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (req.role !== "admin") return res.status(403).json({ error: "forbidden" });
   next();
 }
 
@@ -157,12 +198,12 @@ function publicizeFileSrc(req, p) {
 // --- Auth ---
 app.post("/api/login", (req, res) => {
   const { password } = req.body || {};
-  const team = teamForPassword(password);
-  if (team) return res.json({ ok: true, team });
+  const auth = teamForPassword(password);
+  if (auth) return res.json({ ok: true, team: auth.team, role: auth.role });
   return res.status(401).json({ ok: false });
 });
 
-app.post("/api/change-password", requirePassword, (req, res) => {
+app.post("/api/change-password", requirePassword, requireAdmin, (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
     if (!currentPassword || !newPassword) {
@@ -177,25 +218,21 @@ app.post("/api/change-password", requirePassword, (req, res) => {
 
     const pwds = readPasswords();
 
-    // 현재 비밀번호 확인
-    if (pwds[req.team] !== String(currentPassword)) {
+    // 현재(관리자) 비밀번호 확인
+    if (pwds[req.team]?.admin !== String(currentPassword)) {
       return res.status(400).json({ error: "invalid" });
     }
 
-    // 현재 비밀번호와 동일한 경우
-    if (pwds[req.team] === trimmed) {
-      return res.status(400).json({ error: "invalid" });
-    }
-
-    // 타 팀 비밀번호와 중복 검증 (동일 메시지로 처리)
-    const otherTeams = TEAMS.filter((t) => t !== req.team);
-    for (const t of otherTeams) {
-      if (pwds[t] === trimmed) {
-        return res.status(400).json({ error: "invalid" });
+    // 다른 어떤 비밀번호와도 중복되면 거부
+    for (const t of TEAMS) {
+      for (const r of ROLES) {
+        if (pwds[t]?.[r] === trimmed) {
+          return res.status(400).json({ error: "invalid" });
+        }
       }
     }
 
-    pwds[req.team] = trimmed;
+    pwds[req.team].admin = trimmed;
     writePasswords(pwds);
     res.json({ ok: true });
   } catch (e) {
@@ -214,7 +251,7 @@ app.get("/api/categories", requirePassword, (req, res) => {
   }
 });
 
-app.post("/api/categories", requirePassword, (req, res) => {
+app.post("/api/categories", requirePassword, requireAdmin, (req, res) => {
   try {
     const { label } = req.body || {};
     if (!label || !String(label).trim()) {
@@ -237,7 +274,7 @@ app.post("/api/categories", requirePassword, (req, res) => {
   }
 });
 
-app.patch("/api/categories/:key", requirePassword, (req, res) => {
+app.patch("/api/categories/:key", requirePassword, requireAdmin, (req, res) => {
   try {
     const { label } = req.body || {};
     if (!label || !String(label).trim()) {
@@ -260,7 +297,7 @@ app.patch("/api/categories/:key", requirePassword, (req, res) => {
   }
 });
 
-app.delete("/api/categories/:key", requirePassword, async (req, res) => {
+app.delete("/api/categories/:key", requirePassword, requireAdmin, async (req, res) => {
   try {
     await serialize(async () => {
       // 카테고리 목록에서 제거
@@ -349,7 +386,7 @@ const upload = multer({
   limits: { fileSize: 200 * 1024 * 1024 },
 });
 
-app.post("/api/presentations", requirePassword, upload.single("file"), async (req, res) => {
+app.post("/api/presentations", requirePassword, requireAdmin, upload.single("file"), async (req, res) => {
   try {
     const { name, category, sourceType, url, openMode } = req.body || {};
     if (!name || !category || !sourceType) {
@@ -391,7 +428,7 @@ app.post("/api/presentations", requirePassword, upload.single("file"), async (re
   }
 });
 
-app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
+app.delete("/api/presentations/:id", requirePassword, requireAdmin, async (req, res) => {
   try {
     await serialize(async () => {
       const list = readAll();
@@ -415,7 +452,7 @@ app.delete("/api/presentations/:id", requirePassword, async (req, res) => {
   }
 });
 
-app.patch("/api/presentations/:id", requirePassword, async (req, res) => {
+app.patch("/api/presentations/:id", requirePassword, requireAdmin, async (req, res) => {
   try {
     const { name, openMode } = req.body || {};
     if (!name && !openMode) {
@@ -445,7 +482,7 @@ app.patch("/api/presentations/:id", requirePassword, async (req, res) => {
 
 
 // 카테고리 순서 변경
-app.put("/api/categories/reorder", requirePassword, (req, res) => {
+app.put("/api/categories/reorder", requirePassword, requireAdmin, (req, res) => {
   try {
     const { keys } = req.body || {};
     if (!Array.isArray(keys)) return res.status(400).json({ error: "keys required" });
@@ -463,7 +500,7 @@ app.put("/api/categories/reorder", requirePassword, (req, res) => {
 });
 
 // 프레젠테이션 순서 변경
-app.put("/api/presentations/reorder", requirePassword, async (req, res) => {
+app.put("/api/presentations/reorder", requirePassword, requireAdmin, async (req, res) => {
   try {
     const { ids } = req.body || {};
     if (!Array.isArray(ids)) return res.status(400).json({ error: "ids required" });
