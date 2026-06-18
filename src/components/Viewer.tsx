@@ -123,7 +123,9 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       if (cw <= 0 || ch <= 0) return;
       const p = await pdf.getPage(1);
       const vp = p.getViewport({ scale: 1, rotation: rotation * 90 });
-      setScale(Math.min(cw / vp.width, ch / vp.height, 2.5));
+      const isLandscape = vp.width > vp.height;
+        const fitScale = isLandscape ? cw / vp.width : Math.min(cw / vp.width, ch / vp.height);
+        setScale(Math.min(fitScale, 2.5));
     };
     requestAnimationFrame(() => requestAnimationFrame(() => calc()));
   }, [pdf, rotation]);
@@ -133,14 +135,18 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     if (!pdf) return;
     let timer: ReturnType<typeof setTimeout>;
     const handleResize = async () => {
-      clearTimeout(timer);
-      timer = setTimeout(async () => {
+    // 전체화면 중에는 resize 핸들러 무시 (fullscreen 핸들러가 처리)
+    if (document.fullscreenElement) return;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
         if (!containerRef.current || !pdf) return;
         const p = await pdf.getPage(1);
         const vp = p.getViewport({ scale: 1, rotation: rotation * 90 });
         const cw = containerRef.current.clientWidth - 32;
         const ch = containerRef.current.clientHeight - 32;
-        setScale(Math.min(cw / vp.width, ch / vp.height, 2.5));
+        const isLandscape = vp.width > vp.height;
+        const fitScale = isLandscape ? cw / vp.width : Math.min(cw / vp.width, ch / vp.height);
+        setScale(Math.min(fitScale, 2.5));
       }, 150);
     };
     window.addEventListener("resize", handleResize);
@@ -275,9 +281,10 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       if (!containerRef.current) return;
       const p = await pdf.getPage(1);
       const vp = p.getViewport({ scale: 1, rotation: rotation * 90 });
-      const cw = containerRef.current.clientWidth - 32;
-      const ch = containerRef.current.clientHeight - 32;
-      setScale(Math.min(cw / vp.width, ch / vp.height, 2.5));
+      const target = document.fullscreenElement || viewerRef.current;
+      const cw = (target as HTMLElement).clientWidth;
+      const ch = (target as HTMLElement).clientHeight;
+      setScale(Math.min(cw / vp.width, ch / vp.height));
     };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
@@ -341,7 +348,7 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
           ))}
         </div>
       )}
-      <div ref={containerRef} className="flex-1 overflow-auto flex justify-center p-4">
+      <div ref={containerRef} className={["flex-1 overflow-auto flex justify-center", isFullscreen ? "p-0 items-center" : "p-4"].join(" ")}>
         <div className="relative self-start">
           <canvas ref={canvasRef} className="shadow-2xl rounded block" />
           <canvas ref={overlayRef} className="absolute inset-0 pointer-events-none rounded" />
