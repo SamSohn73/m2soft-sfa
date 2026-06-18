@@ -492,7 +492,26 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
 
 function ViewerBody({ kind, url, presentation }: { kind: ReturnType<typeof buildViewerUrl>["kind"]; url: string; presentation: Presentation; }) {
   if (kind === "image") return <div className="h-full w-full overflow-auto grid place-items-center p-4"><img src={url} alt={presentation.name} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" /></div>;
-  if (kind === "video") return <div className="h-full w-full grid place-items-center p-4 bg-black"><video src={url} controls className="max-w-full max-h-full" /></div>;
+  if (kind === "video") {
+    return (
+      <div
+        className="w-full bg-black flex items-center justify-center"
+        style={{ height: "100%", overflow: "hidden" }}
+      >
+        <video
+          src={url}
+          controls
+          style={{
+            maxWidth: "100%",
+            maxHeight: "100%",
+            width: "auto",
+            height: "auto",
+            display: "block",
+          }}
+        />
+      </div>
+    );
+  }
   if (kind === "audio") return <div className="h-full w-full grid place-items-center p-6"><audio src={url} controls className="w-full max-w-xl" /></div>;
   if (kind === "office" && presentation.sourceType === "file") return (
     <div className="h-full w-full grid place-items-center text-center p-8">
