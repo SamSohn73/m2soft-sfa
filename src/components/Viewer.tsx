@@ -491,7 +491,28 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
 }
 
 function ViewerBody({ kind, url, presentation }: { kind: ReturnType<typeof buildViewerUrl>["kind"]; url: string; presentation: Presentation; }) {
-  if (kind === "image") return <div className="h-full w-full overflow-auto grid place-items-center p-4"><img src={url} alt={presentation.name} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" /></div>;
+if (kind === "image") {
+    return (
+      <div
+        className="w-full flex items-center justify-center p-4"
+        style={{ height: "100%", overflow: "auto" }}
+      >
+        <img
+          src={url}
+          alt={presentation.name}
+          style={{
+            maxWidth: "100%",
+            maxHeight: "100%",
+            width: "auto",
+            height: "auto",
+            objectFit: "contain",
+          }}
+          className="rounded-lg shadow-2xl"
+        />
+      </div>
+    );
+  }
+  
   if (kind === "video") {
     return (
       <div
