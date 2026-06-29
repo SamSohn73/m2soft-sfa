@@ -26,7 +26,7 @@ function MainPage() {
   const [pwdOpen, setPwdOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [sidebarWidth, setSidebarWidth] = useState(290);
   const [sidebarResizing, setSidebarResizing] = useState(false);
 
   useEffect(() => {

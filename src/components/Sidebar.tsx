@@ -608,23 +608,16 @@ export function Sidebar({
         {/* Logo */}
         <div className="px-5 pt-5 pb-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-xl gradient-brand grid place-items-center font-extrabold text-primary-foreground glow-brand">
-              M²
-            </div>
-            <div className="leading-tight">
-              <div className="font-extrabold tracking-tight text-lg">
-                <span>M2</span>
-                <span className="text-brand">SOFT</span>
-              </div>
-              <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                <span>more than the most</span>
-                {getTeam() && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold">
-                    {TEAM_LABELS[getTeam()!]}
-                  </span>
-                )}
-              </div>
-            </div>
+            <img
+              src="/logo_white.png"
+              alt="M2SOFT"
+              className="h-10 w-auto object-contain"
+            />
+            {getTeam() && (
+              <span className="px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold text-[10px]">
+                {TEAM_LABELS[getTeam()!]}
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
