@@ -60,15 +60,16 @@ function LoginPage() {
           shake ? "animate-[shake_.4s]" : ""
         }`}
       >
+
         <div className="flex flex-col items-center mb-8">
           <div className="h-14 w-14 rounded-2xl gradient-brand flex items-center justify-center mb-4 shadow-lg">
             <Lock className="h-6 w-6 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">
-            <span className="text-foreground">M2</span>
-            <span className="text-brand">SOFT</span>
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">Document Viewer</p>
+          <img
+            src="/logo_white.png"
+            alt="M2SOFT"
+            className="h-12 w-auto object-contain"
+          />
         </div>
 
         <label className="block">
