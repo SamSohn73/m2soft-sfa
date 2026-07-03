@@ -728,14 +728,12 @@ export function Sidebar({
         <div className="relative border-t border-border p-3">
           {menuOpen && (
             <div className="absolute bottom-full left-3 right-3 mb-2 rounded-xl bg-popover border border-border shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-              {admin && (
-                <button
-                  onClick={() => { setMenuOpen(false); onOpenPassword(); }}
-                  className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm"
-                >
-                  <KeyRound className="h-4 w-4 text-brand" /> 비밀번호 변경
-                </button>
-              )}
+              <button
+                onClick={() => { setMenuOpen(false); onOpenPassword(); }}
+                className="w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm"
+              >
+                <KeyRound className="h-4 w-4 text-brand" /> 비밀번호 변경
+              </button>
               <button
                 onClick={logout}
                 className={`w-full px-4 py-3 flex items-center gap-2.5 hover:bg-accent transition text-sm ${admin ? "border-t border-border" : ""}`}

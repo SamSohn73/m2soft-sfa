@@ -300,7 +300,7 @@ app.post("/api/login", (req, res) => {
   return res.status(401).json({ ok: false });
 });
 
-app.post("/api/change-password", requirePassword, requireAdmin, (req, res) => {
+app.post("/api/change-password", requirePassword, (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
     if (!currentPassword || !newPassword) {
@@ -311,17 +311,18 @@ app.post("/api/change-password", requirePassword, requireAdmin, (req, res) => {
       return res.status(400).json({ error: "invalid" });
     }
     const pwds = readPasswords();
-    if (pwds[req.team]?.admin !== String(currentPassword)) {
+    if (pwds[req.team]?.[req.role] !== String(currentPassword)) {
       return res.status(400).json({ error: "invalid" });
     }
     for (const t of TEAMS) {
       for (const r of ROLES) {
+        if (t === req.team && r === req.role) continue;
         if (pwds[t]?.[r] === trimmed) {
           return res.status(400).json({ error: "invalid" });
         }
       }
     }
-    pwds[req.team].admin = trimmed;
+    pwds[req.team][req.role] = trimmed;
     writePasswords(pwds);
     logAccess(req, "PASSWORD_CHANGE");
     res.json({ ok: true });
