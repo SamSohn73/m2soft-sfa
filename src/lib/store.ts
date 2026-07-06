@@ -33,7 +33,7 @@ const isBrowser = () => typeof window !== "undefined";
 
 export const API_BASE: string =
   (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    ?.VITE_API_BASE?.replace(/\/$/, "") || "http://localhost:4000";
+    ?.VITE_API_BASE?.replace(/\/$/, "") || "";
 
 export function getPassword(): string {
   if (!isBrowser()) return "";
