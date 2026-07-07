@@ -339,9 +339,9 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       {showThumbnails && (
         <div className="w-32 shrink-0 border-r border-border overflow-y-auto bg-card/50 flex flex-col gap-2 p-2">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-            <button key={n} onClick={() => setPage(n)} className={["rounded overflow-hidden border-2 transition", n === page ? "border-brand" : "border-transparent hover:border-brand/40"].join(" ")}>
+            <button key={n} onClick={() => setPage(n)} className={["rounded border-2 transition", n === page ? "border-brand" : "border-transparent hover:border-brand/40"].join(" ")}>
               {thumbUrls.has(n)
-                ? <img src={thumbUrls.get(n)} alt={`${n}페이지`} className="w-full h-auto" />
+                ? <img src={thumbUrls.get(n)} alt={`${n}페이지`} style={{ width: "100%", height: "auto", display: "block" }} />
                 : <div className="w-full h-20 bg-muted/30 grid place-items-center text-xs text-muted-foreground">{n}</div>}
               <div className="text-[10px] text-center py-0.5 text-muted-foreground">{n}</div>
             </button>
