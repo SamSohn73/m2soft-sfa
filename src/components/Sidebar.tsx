@@ -586,14 +586,17 @@ export function Sidebar({
 
       <aside
         className={[
-          "fixed lg:static z-40 inset-y-0 left-0 relative",
+          "z-40 inset-y-0 left-0",
           "bg-sidebar text-sidebar-foreground border-r border-border flex flex-col",
           dragging ? "" : "transition-all duration-300 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
           "lg:translate-x-0",
           collapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0" : "",
         ].join(" ")}
-        style={{ width: collapsed ? undefined : `${width}px` }}
+        style={{
+          width: collapsed ? undefined : `${width}px`,
+          position: "fixed",
+        } as React.CSSProperties}
       >
         {/* 드래그 핸들 (너비 조절) */}
         <div

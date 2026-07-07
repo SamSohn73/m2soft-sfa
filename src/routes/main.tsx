@@ -70,21 +70,42 @@ function MainPage() {
   ].join(" ");
 
   return (
-    <div className="h-screen w-full flex bg-background overflow-hidden relative">
-      <Sidebar
-        selectedId={selected?.id ?? null}
-        onSelect={handleSelect}
-        onOpenUpload={handleOpenUpload}
-        onOpenPassword={() => setPwdOpen(true)}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
-        width={sidebarWidth}
-        onWidthChange={setSidebarWidth}
-        onResizeStart={() => setSidebarResizing(true)}
-        onResizeEnd={() => setSidebarResizing(false)}
-      />
+    <div className="h-screen w-full bg-background overflow-hidden relative flex">
+      {/* 데스크탑: 사이드바를 flex 레이아웃에 포함 / 모바일: fixed overlay */}
+      <div className="hidden lg:flex lg:shrink-0" style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}>
+        <Sidebar
+          selectedId={selected?.id ?? null}
+          onSelect={handleSelect}
+          onOpenUpload={handleOpenUpload}
+          onOpenPassword={() => setPwdOpen(true)}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
+          onResizeStart={() => setSidebarResizing(true)}
+          onResizeEnd={() => setSidebarResizing(false)}
+        />
+      </div>
+
+      {/* 모바일 전용 사이드바 (overlay) */}
+      <div className="lg:hidden">
+        <Sidebar
+          selectedId={selected?.id ?? null}
+          onSelect={handleSelect}
+          onOpenUpload={handleOpenUpload}
+          onOpenPassword={() => setPwdOpen(true)}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
+          onResizeStart={() => setSidebarResizing(true)}
+          onResizeEnd={() => setSidebarResizing(false)}
+        />
+      </div>
 
       {sidebarCollapsed && (
         <button
@@ -104,9 +125,11 @@ function MainPage() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="font-bold tracking-tight">
-            M2<span className="text-brand">SOFT</span>
-          </span>
+          <img
+            src="/logo_white.png"
+            alt="M2SOFT"
+            className="h-7 w-auto object-contain"
+          />
         </div>
 
         <div className="flex-1 min-h-0 relative">
