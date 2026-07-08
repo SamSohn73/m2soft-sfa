@@ -52,6 +52,10 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   const renderTaskRef = useRef<any>(null);
   const thumbCanvasesRef = useRef<Map<number, string>>(new Map());
 
+  // 스와이프 감지용
+  const swipeTouchStartX = useRef<number | null>(null);
+  const swipeTouchStartY = useRef<number | null>(null);
+
   const [pdf, setPdf] = useState<any>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -72,10 +76,35 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   const [showFsOverlay, setShowFsOverlay] = useState(false);
   const fsOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const handleSwipeTouchStart = useCallback((e: React.TouchEvent) => {
+    swipeTouchStartX.current = e.touches[0].clientX;
+    swipeTouchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleSwipeTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (swipeTouchStartX.current === null || swipeTouchStartY.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
+    const dy = e.changedTouches[0].clientY - swipeTouchStartY.current;
+    swipeTouchStartX.current = null;
+    swipeTouchStartY.current = null;
+
+    // 수직 스크롤과 구분
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (Math.abs(dx) < 50) return;
+
+    if (dx < 0) {
+      // 왼쪽 스와이프 → 다음 페이지
+      setPage(p => Math.min(p + 1, totalPages));
+    } else {
+      // 오른쪽 스와이프 → 이전 페이지
+      setPage(p => Math.max(p - 1, 1));
+    }
+  }, [totalPages]);
+
   const handleFsTouch = useCallback(() => {
     setShowFsOverlay(true);
     if (fsOverlayTimerRef.current) clearTimeout(fsOverlayTimerRef.current);
-    fsOverlayTimerRef.current = setTimeout(() => setShowFsOverlay(false), 3000);
+    fsOverlayTimerRef.current = setTimeout(() => setShowFsOverlay(false), 1500);
   }, []);
 
   const calcFitScale = useCallback(async (pdfDoc: any, mode: "width" | "height" | "auto", rot: number) => {
@@ -347,7 +376,8 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       {isFullscreen && (
         <div
           className="absolute inset-0 z-50"
-          onTouchStart={handleFsTouch}
+          onTouchStart={(e) => { handleFsTouch(); handleSwipeTouchStart(e); }}
+          onTouchEnd={handleSwipeTouchEnd}
           onClick={handleFsTouch}
         >
           {showFsOverlay && (
@@ -375,7 +405,7 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
           ))}
         </div>
       )}
-      <div ref={containerRef} className={["flex-1 overflow-auto flex justify-center", isFullscreen ? "p-0 items-center" : "p-4"].join(" ")}>
+      <div ref={containerRef} className={["flex-1 overflow-auto flex justify-center", isFullscreen ? "p-0 items-center" : "p-4"].join(" ")} onTouchStart={handleSwipeTouchStart} onTouchEnd={handleSwipeTouchEnd}>
         <div className="relative self-start">
           <canvas ref={canvasRef} className="shadow-2xl rounded block" />
           <canvas ref={overlayRef} className="absolute inset-0 pointer-events-none rounded" />
