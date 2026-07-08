@@ -68,6 +68,16 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [thumbUrls, setThumbUrls] = useState<Map<number, string>>(new Map());
 
+  // 전체화면 오버레이
+  const [showFsOverlay, setShowFsOverlay] = useState(false);
+  const fsOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleFsTouch = useCallback(() => {
+    setShowFsOverlay(true);
+    if (fsOverlayTimerRef.current) clearTimeout(fsOverlayTimerRef.current);
+    fsOverlayTimerRef.current = setTimeout(() => setShowFsOverlay(false), 3000);
+  }, []);
+
   const calcFitScale = useCallback(async (pdfDoc: any, mode: "width" | "height" | "auto", rot: number) => {
     if (!containerRef.current || !pdfDoc) return 1;
     const p = await pdfDoc.getPage(1);
@@ -97,7 +107,6 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
         setTotalPages(doc.numPages);
         setLoading(false);
 
-        // 텍스트 추출
         const texts: TextItem[][] = [];
         for (let i = 1; i <= doc.numPages; i++) {
           const pg = await doc.getPage(i);
@@ -124,8 +133,8 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       const p = await pdf.getPage(1);
       const vp = p.getViewport({ scale: 1, rotation: rotation * 90 });
       const isLandscape = vp.width > vp.height;
-        const fitScale = isLandscape ? cw / vp.width : Math.min(cw / vp.width, ch / vp.height);
-        setScale(Math.min(fitScale, 2.5));
+      const fitScale = isLandscape ? cw / vp.width : Math.min(cw / vp.width, ch / vp.height);
+      setScale(Math.min(fitScale, 2.5));
     };
     requestAnimationFrame(() => requestAnimationFrame(() => calc()));
   }, [pdf, rotation]);
@@ -135,10 +144,9 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     if (!pdf) return;
     let timer: ReturnType<typeof setTimeout>;
     const handleResize = async () => {
-    // 전체화면 중에는 resize 핸들러 무시 (fullscreen 핸들러가 처리)
-    if (document.fullscreenElement) return;
-    clearTimeout(timer);
-    timer = setTimeout(async () => {
+      if (document.fullscreenElement) return;
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
         if (!containerRef.current || !pdf) return;
         const p = await pdf.getPage(1);
         const vp = p.getViewport({ scale: 1, rotation: rotation * 90 });
@@ -201,7 +209,6 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     try {
       await task.promise;
 
-      // 텍스트 레이어
       if (textLayerRef.current) {
         textLayerRef.current.innerHTML = "";
         textLayerRef.current.style.width = viewport.width + "px";
@@ -221,7 +228,6 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
         });
       }
 
-      // 검색 하이라이트
       if (overlayRef.current && matches.length > 0 && allPageTexts[pageNum - 1]) {
         const octx = overlayRef.current.getContext("2d");
         if (octx) {
@@ -276,6 +282,7 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     const handler = async () => {
       const fs = !!document.fullscreenElement;
       setIsFullscreen(fs);
+      if (!fs) setShowFsOverlay(false);
       if (!pdf || !containerRef.current) return;
       await new Promise(r => setTimeout(r, 100));
       if (!containerRef.current) return;
@@ -335,7 +342,27 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   if (error) return <div className="h-full grid place-items-center text-center px-6"><div className="text-sm text-destructive max-w-md">{error}</div></div>;
 
   return (
-    <div ref={viewerRef} className="h-full flex bg-content">
+    <div ref={viewerRef} className="h-full flex bg-content relative">
+      {/* 전체화면 터치 오버레이 */}
+      {isFullscreen && (
+        <div
+          className="absolute inset-0 z-50"
+          onTouchStart={handleFsTouch}
+          onClick={handleFsTouch}
+        >
+          {showFsOverlay && (
+            <div className="absolute top-4 right-4 animate-in fade-in">
+              <button
+                onClick={(e) => { e.stopPropagation(); document.exitFullscreen(); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black/70 text-white text-sm font-medium backdrop-blur-sm border border-white/20"
+              >
+                <Minimize className="h-4 w-4" /> 전체화면 종료
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {showThumbnails && (
         <div className="w-32 shrink-0 border-r border-border overflow-y-auto bg-card/50 flex flex-col gap-2 p-2">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
@@ -365,6 +392,13 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
   const [pdfControls, setPdfControls] = useState<PdfControls | null>(null);
   const [pageInput, setPageInput] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const headerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showHeader = useCallback(() => {
+    setHeaderVisible(true);
+    if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
+    headerTimerRef.current = setTimeout(() => setHeaderVisible(false), 3000);
+  }, []);
 
   useEffect(() => { setUsePdfJs(true); setPdfControls(null); }, [presentation?.id]);
   useEffect(() => { if (pdfControls?.showSearch) setTimeout(() => searchInputRef.current?.focus(), 50); }, [pdfControls?.showSearch]);
@@ -394,10 +428,27 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
 
   return (
     <div className="h-full flex flex-col relative">
-      <div className="absolute top-0 left-0 right-0 h-1 z-20" onMouseEnter={() => setHeaderVisible(true)} />
+      {/* 마우스/터치 감지 영역 (최상단) */}
+      <div
+        className="absolute top-0 left-0 right-0 h-1 z-20"
+        onMouseEnter={showHeader}
+        onTouchStart={showHeader}
+      />
+      {/* 모바일 터치 감지 영역 (더 넓은 영역) */}
+      {!headerVisible && (
+        <div
+          className="absolute top-0 left-0 right-0 h-16 z-20 lg:hidden"
+          onTouchStart={showHeader}
+        />
+      )}
+
+      {/* 슬라이딩 헤더 */}
       <div
         className={["absolute top-0 left-0 right-0 z-10", "border-b border-border bg-card/95 backdrop-blur-sm shadow-md", "transition-transform duration-300 ease-in-out", headerVisible ? "translate-y-0" : "-translate-y-full"].join(" ")}
-        onMouseLeave={() => setHeaderVisible(false)}
+        onMouseLeave={() => {
+          if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
+          setHeaderVisible(false);
+        }}
       >
         {/* 행1: 파일명 + 버튼 */}
         <div className="flex items-center justify-between gap-3 px-5 py-2.5">
@@ -491,45 +542,17 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
 }
 
 function ViewerBody({ kind, url, presentation }: { kind: ReturnType<typeof buildViewerUrl>["kind"]; url: string; presentation: Presentation; }) {
-if (kind === "image") {
+  if (kind === "image") {
     return (
-      <div
-        className="w-full flex items-center justify-center p-4"
-        style={{ height: "100%", overflow: "auto" }}
-      >
-        <img
-          src={url}
-          alt={presentation.name}
-          style={{
-            maxWidth: "100%",
-            maxHeight: "100%",
-            width: "auto",
-            height: "auto",
-            objectFit: "contain",
-          }}
-          className="rounded-lg shadow-2xl"
-        />
+      <div className="w-full flex items-center justify-center p-4" style={{ height: "100%", overflow: "auto" }}>
+        <img src={url} alt={presentation.name} style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain" }} className="rounded-lg shadow-2xl" />
       </div>
     );
   }
-
   if (kind === "video") {
     return (
-      <div
-        className="w-full bg-black flex items-center justify-center"
-        style={{ height: "100%", overflow: "hidden" }}
-      >
-        <video
-          src={url}
-          controls
-          style={{
-            maxWidth: "100%",
-            maxHeight: "100%",
-            width: "auto",
-            height: "auto",
-            display: "block",
-          }}
-        />
+      <div className="w-full bg-black flex items-center justify-center" style={{ height: "100%", overflow: "hidden" }}>
+        <video src={url} controls style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", display: "block" }} />
       </div>
     );
   }
