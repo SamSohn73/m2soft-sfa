@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Viewer } from "@/components/Viewer";
 import { UploadModal } from "@/components/UploadModal";
@@ -28,6 +28,10 @@ function MainPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(290);
   const [sidebarResizing, setSidebarResizing] = useState(false);
+
+  // 스와이프 감지용
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isAuthed()) navigate({ to: "/" });
@@ -62,6 +66,33 @@ function MainPage() {
     setSidebarOpen(false);
   };
 
+  // 스와이프 핸들러
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+
+    // 수평 스와이프만 처리 (수직 스크롤 제외)
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (Math.abs(dx) < 50) return;
+
+    if (dx > 0 && touchStartX.current < 30 && !sidebarOpen) {
+      // 왼쪽 가장자리(30px)에서 오른쪽 스와이프 → 사이드바 열기
+      setSidebarOpen(true);
+    } else if (dx < 0 && sidebarOpen) {
+      // 왼쪽 스와이프 → 사이드바 닫기
+      setSidebarOpen(false);
+    }
+
+    touchStartX.current = null;
+    touchStartY.current = null;
+  }, [sidebarOpen]);
+
   const btnCls = [
     "hidden lg:flex fixed left-0 top-6 z-50",
     "h-9 w-6 items-center justify-center",
@@ -70,7 +101,11 @@ function MainPage() {
   ].join(" ");
 
   return (
-    <div className="h-screen w-full bg-background overflow-hidden relative flex">
+    <div
+      className="h-screen w-full bg-background overflow-hidden relative flex"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* 데스크탑: 사이드바를 flex 레이아웃에 포함 / 모바일: fixed overlay */}
       <div className="hidden lg:flex lg:shrink-0" style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}>
         <Sidebar
