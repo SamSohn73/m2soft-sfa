@@ -56,6 +56,10 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   const swipeTouchStartX = useRef<number | null>(null);
   const swipeTouchStartY = useRef<number | null>(null);
 
+  // 핀치 줌 감지용
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartScale = useRef<number>(1);
+
   const [pdf, setPdf] = useState<any>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -76,12 +80,28 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   const [showFsOverlay, setShowFsOverlay] = useState(false);
   const fsOverlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const getDistance = (touches: TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
   const handleSwipeTouchStart = useCallback((e: React.TouchEvent) => {
-    swipeTouchStartX.current = e.touches[0].clientX;
-    swipeTouchStartY.current = e.touches[0].clientY;
-  }, []);
+    if (e.touches.length === 2) {
+      pinchStartDist.current = getDistance(e.touches as unknown as TouchList);
+      pinchStartScale.current = scale;
+    } else {
+      swipeTouchStartX.current = e.touches[0].clientX;
+      swipeTouchStartY.current = e.touches[0].clientY;
+    }
+  }, [scale]);
 
   const handleSwipeTouchEnd = useCallback((e: React.TouchEvent) => {
+    // 핀치 종료
+    if (pinchStartDist.current !== null) {
+      pinchStartDist.current = null;
+      return;
+    }
     if (swipeTouchStartX.current === null || swipeTouchStartY.current === null) return;
     const dx = e.changedTouches[0].clientX - swipeTouchStartX.current;
     const dy = e.changedTouches[0].clientY - swipeTouchStartY.current;
@@ -104,7 +124,7 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
   const handleFsTouch = useCallback(() => {
     setShowFsOverlay(true);
     if (fsOverlayTimerRef.current) clearTimeout(fsOverlayTimerRef.current);
-    fsOverlayTimerRef.current = setTimeout(() => setShowFsOverlay(false), 1500);
+    fsOverlayTimerRef.current = setTimeout(() => setShowFsOverlay(false), 3000);
   }, []);
 
   const calcFitScale = useCallback(async (pdfDoc: any, mode: "width" | "height" | "auto", rot: number) => {
@@ -338,6 +358,46 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     return () => window.removeEventListener("keydown", handler);
   }, [totalPages]);
 
+  // 핀치 줌 (non-passive touchstart + touchmove)
+  useEffect(() => {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        pinchStartDist.current = Math.sqrt(dx * dx + dy * dy);
+        pinchStartScale.current = scale;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchStartDist.current !== null) {
+        e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const ratio = dist / pinchStartDist.current;
+        const newScale = Math.min(Math.max(pinchStartScale.current * ratio, 0.3), 3);
+        setScale(newScale);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      pinchStartDist.current = null;
+    };
+
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [scale]);
+
   // 컨트롤 노출
   useEffect(() => {
     if (totalPages === 0) return;
@@ -376,8 +436,7 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       {isFullscreen && (
         <div
           className="absolute inset-0 z-50"
-          onTouchStart={(e) => { handleFsTouch(); handleSwipeTouchStart(e); }}
-          onTouchEnd={handleSwipeTouchEnd}
+          onTouchStart={handleFsTouch}
           onClick={handleFsTouch}
         >
           {showFsOverlay && (
