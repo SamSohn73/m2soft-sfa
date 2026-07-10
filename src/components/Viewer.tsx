@@ -362,17 +362,25 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     return () => window.removeEventListener("keydown", handler);
   }, [totalPages]);
 
-  // 핀치 줌 (non-passive touchstart + touchmove)
+  // 핀치 줌 + 전체화면 스와이프 (non-passive)
   useEffect(() => {
     const el = viewerRef.current;
     if (!el) return;
 
+    let fsSwipeStartX: number | null = null;
+    let fsSwipeStartY: number | null = null;
+
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
+        // 핀치 줌 시작
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         pinchStartDist.current = Math.sqrt(dx * dx + dy * dy);
         pinchStartScale.current = scale;
+      } else if (e.touches.length === 1 && isFullscreen) {
+        // 전체화면 스와이프 시작
+        fsSwipeStartX = e.touches[0].clientX;
+        fsSwipeStartY = e.touches[0].clientY;
       }
     };
 
@@ -388,8 +396,25 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       }
     };
 
-    const handleTouchEnd = () => {
-      pinchStartDist.current = null;
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (pinchStartDist.current !== null) {
+        pinchStartDist.current = null;
+        return;
+      }
+      // 전체화면 스와이프 종료
+      if (isFullscreen && fsSwipeStartX !== null && fsSwipeStartY !== null) {
+        const dx = e.changedTouches[0].clientX - fsSwipeStartX;
+        const dy = e.changedTouches[0].clientY - fsSwipeStartY;
+        fsSwipeStartX = null;
+        fsSwipeStartY = null;
+        if (Math.abs(dx) >= Math.abs(dy) * 1.5 && Math.abs(dx) >= 50) {
+          if (dx < 0) {
+            setPage(p => Math.min(p + 1, totalPages));
+          } else {
+            setPage(p => Math.max(p - 1, 1));
+          }
+        }
+      }
     };
 
     el.addEventListener("touchstart", handleTouchStart, { passive: true });
@@ -400,7 +425,7 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       el.removeEventListener("touchmove", handleTouchMove);
       el.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [scale]);
+  }, [scale, isFullscreen, totalPages]);
 
   // 컨트롤 노출
   useEffect(() => {
@@ -440,7 +465,8 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       {isFullscreen && (
         <div
           className="absolute inset-0 z-50"
-          onTouchStart={handleFsTouch}
+          onTouchStart={(e) => { handleFsTouch(); handleSwipeTouchStart(e); }}
+          onTouchEnd={handleSwipeTouchEnd}
           onClick={handleFsTouch}
         >
           {showFsOverlay && (
