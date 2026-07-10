@@ -248,8 +248,12 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = viewport.width * dpr;
+    canvas.height = viewport.height * dpr;
+    canvas.style.width = viewport.width + "px";
+    canvas.style.height = viewport.height + "px";
+    ctx.scale(dpr, dpr);
 
     if (overlayRef.current) { overlayRef.current.width = viewport.width; overlayRef.current.height = viewport.height; }
 
