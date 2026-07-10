@@ -490,7 +490,11 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
   const showHeader = useCallback(() => {
     setHeaderVisible(true);
     if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
-    headerTimerRef.current = setTimeout(() => setHeaderVisible(false), 3000);
+    headerTimerRef.current = null;
+    // 모바일에서만 타이머로 자동 숨김 (PC는 onMouseLeave로 숨김)
+    if (window.innerWidth < 1024) {
+      headerTimerRef.current = setTimeout(() => setHeaderVisible(false), 3000);
+    }
   }, []);
 
   useEffect(() => { setUsePdfJs(true); setPdfControls(null); }, [presentation?.id]);
@@ -521,9 +525,9 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* 마우스/터치 감지 영역 (최상단) */}
+      {/* 마우스/터치 감지 영역 (최상단 16px) */}
       <div
-        className="absolute top-0 left-0 right-0 h-1 z-20"
+        className="absolute top-0 left-0 right-0 h-4 z-20"
         onMouseEnter={showHeader}
         onTouchStart={showHeader}
       />
@@ -538,9 +542,10 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
       {/* 슬라이딩 헤더 */}
       <div
         className={["absolute top-0 left-0 right-0 z-10", "border-b border-border bg-card/95 backdrop-blur-sm shadow-md", "transition-transform duration-300 ease-in-out", headerVisible ? "translate-y-0" : "-translate-y-full"].join(" ")}
+        onMouseEnter={showHeader}
         onMouseLeave={() => {
           if (headerTimerRef.current) clearTimeout(headerTimerRef.current);
-          setHeaderVisible(false);
+          headerTimerRef.current = setTimeout(() => setHeaderVisible(false), 300);
         }}
       >
         {/* 행1: 파일명 + 버튼 */}
