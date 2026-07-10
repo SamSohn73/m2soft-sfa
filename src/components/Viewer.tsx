@@ -591,7 +591,7 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
                 </button>
               </div>
             )}
-            {presentation.sourceType === "file" && (
+            {presentation.sourceType === "file" && presentation.allowDownload !== false && (
               <button onClick={() => triggerDownload(presentation.src, presentation.fileName ?? presentation.name)} className="h-8 px-3 rounded-lg border border-border hover:bg-accent transition flex items-center gap-1.5 text-xs">
                 <Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">다운로드</span>
               </button>

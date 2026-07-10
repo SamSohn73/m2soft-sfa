@@ -35,13 +35,14 @@ import {
 import {
   Plus, Search, Menu, ChevronDown, ChevronRight,
   KeyRound, LogOut, X, FileText, Trash2, Pencil,
-  FolderPlus, PanelLeftClose, GripVertical, ExternalLink,
+  FolderPlus, PanelLeftClose, GripVertical, ExternalLink, Download,
 } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent,
   ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { OpenModeModal } from "@/components/OpenModeModal";
+import { DownloadModal } from "@/components/DownloadModal";
 
 type Props = {
   selectedId: string | null;
@@ -84,7 +85,7 @@ function SortableCatItem({
   selectedId, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
   onSelect, beginRenameItem, handleRemoveItem, onItemDragEnd, sensors,
-  onOpenUpload, onChangeOpenMode, admin,
+  onOpenUpload, onChangeOpenMode, onChangeDownload, admin,
 }: {
   c: Category;
   isOpen: boolean;
@@ -111,6 +112,7 @@ function SortableCatItem({
   sensors: ReturnType<typeof useSensors>;
   onOpenUpload: (categoryKey?: string) => void;
   onChangeOpenMode: (p: Presentation) => void;
+  onChangeDownload: (p: Presentation) => void;
   admin: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -211,6 +213,7 @@ function SortableCatItem({
                   beginRenameItem={beginRenameItem}
                   handleRemoveItem={handleRemoveItem}
                   onChangeOpenMode={onChangeOpenMode}
+                  onChangeDownload={onChangeDownload}
                   query={query}
                   admin={admin}
                 />
@@ -226,7 +229,7 @@ function SortableCatItem({
 function SortablePresentationItem({
   p, active, renamingItemId, renameItemValue,
   setRenameItemValue, commitRenameItem, setRenamingItemId,
-  onSelect, beginRenameItem, handleRemoveItem, onChangeOpenMode, query, admin,
+  onSelect, beginRenameItem, handleRemoveItem, onChangeOpenMode, onChangeDownload, query, admin,
 }: {
   p: Presentation;
   active: boolean;
@@ -302,9 +305,12 @@ function SortablePresentationItem({
             <ContextMenuItem onClick={() => beginRenameItem(p)}>
               <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => onChangeOpenMode(p)}>
-              <ExternalLink className="h-4 w-4 mr-2 text-brand" /> 열기 방식 변경
-            </ContextMenuItem>
+          <ContextMenuItem onClick={() => onChangeOpenMode(p)}>
+            <ExternalLink className="h-4 w-4 mr-2 text-brand" /> 열기 방식 변경
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => onChangeDownload(p)}>
+            <Download className="h-4 w-4 mr-2 text-brand" /> 다운로드 설정
+          </ContextMenuItem>
             <ContextMenuItem
               onClick={() => handleRemoveItem(p)}
               className="text-destructive focus:text-destructive"
@@ -340,6 +346,7 @@ export function Sidebar({
   const [pendingCats, setPendingCats] = useState<Category[] | null>(null);
   const [pendingItems, setPendingItems] = useState<{ catKey: string; items: Presentation[] } | null>(null);
   const [openModeTarget, setOpenModeTarget] = useState<Presentation | null>(null);
+  const [downloadTarget, setDownloadTarget] = useState<Presentation | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -547,6 +554,13 @@ export function Sidebar({
   return (
     <>
       {/* 열기 방식 변경 모달 */}
+      {downloadTarget && (
+        <DownloadModal
+          presentation={downloadTarget}
+          onClose={() => setDownloadTarget(null)}
+        />
+      )}
+
       {openModeTarget && (
         <OpenModeModal
           presentation={openModeTarget}
@@ -706,6 +720,7 @@ export function Sidebar({
                       sensors={sensors}
                       onOpenUpload={onOpenUpload}
                       onChangeOpenMode={setOpenModeTarget}
+                      onChangeDownload={setDownloadTarget}
                       admin={admin}
                     />
                   );

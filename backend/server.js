@@ -176,7 +176,7 @@ const DEFAULT_CATEGORIES = [
 
 const CSV_HEADERS = [
   "id", "name", "category", "sourceType",
-  "src", "mime", "fileName", "createdAt", "team", "openMode",
+  "src", "mime", "fileName", "createdAt", "team", "openMode", "allowDownload",
 ];
 
 if (!fs.existsSync(CSV_PATH)) {
@@ -202,11 +202,15 @@ function readAll() {
     mime: r.mime || undefined, fileName: r.fileName || undefined,
     createdAt: Number(r.createdAt) || 0, team: r.team || "",
     openMode: r.openMode || "inline",
+    allowDownload: r.allowDownload !== "false",
   }));
 }
 
 function writeAll(list) {
-  const out = [CSV_HEADERS, ...list.map((p) => CSV_HEADERS.map((h) => p[h] ?? ""))];
+  const out = [CSV_HEADERS, ...list.map((p) => CSV_HEADERS.map((h) => {
+    const val = p[h];
+    return val === undefined || val === null ? "" : String(val);
+  }))];
   fs.writeFileSync(CSV_PATH, csvStringify(out), "utf8");
 }
 
@@ -482,7 +486,7 @@ const upload = multer({
 
 app.post("/api/presentations", requirePassword, requireAdmin, upload.single("file"), async (req, res) => {
   try {
-    const { name, category, sourceType, url, openMode } = req.body || {};
+    const { name, category, sourceType, url, openMode, allowDownload } = req.body || {};
     if (!name || !category || !sourceType) {
       return res.status(400).json({ error: "missing fields" });
     }
@@ -498,6 +502,7 @@ app.post("/api/presentations", requirePassword, requireAdmin, upload.single("fil
         fileName: Buffer.from(req.file.originalname, "latin1").toString("utf8") || "",
         createdAt: Date.now(), team: req.team,
         openMode: openMode === "new_tab" ? "new_tab" : "inline",
+        allowDownload: allowDownload !== "false",
       };
     } else if (sourceType === "url") {
       if (!url) return res.status(400).json({ error: "url required" });
@@ -507,6 +512,7 @@ app.post("/api/presentations", requirePassword, requireAdmin, upload.single("fil
         src: String(url).trim(), mime: "", fileName: "",
         createdAt: Date.now(), team: req.team,
         openMode: openMode === "new_tab" ? "new_tab" : "inline",
+        allowDownload: allowDownload !== "false",
       };
     } else {
       return res.status(400).json({ error: "bad sourceType" });
@@ -552,8 +558,8 @@ app.delete("/api/presentations/:id", requirePassword, requireAdmin, async (req, 
 
 app.patch("/api/presentations/:id", requirePassword, requireAdmin, async (req, res) => {
   try {
-    const { name, openMode } = req.body || {};
-    if (!name && !openMode) {
+    const { name, openMode, allowDownload } = req.body || {};
+    if (!name && !openMode && allowDownload === undefined) {
       return res.status(400).json({ error: "name or openMode required" });
     }
     let updated = null;
@@ -569,6 +575,9 @@ app.patch("/api/presentations/:id", requirePassword, requireAdmin, async (req, r
       if (openMode === "inline" || openMode === "new_tab") {
         list[idx] = { ...list[idx], openMode };
       }
+      if (allowDownload !== undefined) {
+        list[idx] = { ...list[idx], allowDownload: allowDownload !== "false" && allowDownload !== false };
+      }
       updated = list[idx];
       writeAll(list);
     });
@@ -578,6 +587,9 @@ app.patch("/api/presentations/:id", requirePassword, requireAdmin, async (req, r
     }
     if (openMode) {
       logAccess(req, "FILE_OPENMODE_CHANGE", `${updated.name} → ${openMode}`);
+    }
+    if (allowDownload !== undefined) {
+      logAccess(req, "FILE_ALLOWDOWNLOAD_CHANGE", `${updated.name} → ${allowDownload}`);
     }
     res.json(publicizeFileSrc(req, updated));
   } catch (e) {

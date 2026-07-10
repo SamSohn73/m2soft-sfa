@@ -24,6 +24,7 @@ export function UploadModal({
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [openMode, setOpenMode] = useState<OpenMode>("inline");
+  const [allowDownload, setAllowDownload] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,10 +65,10 @@ export function UploadModal({
     try {
       if (mode === "file") {
         if (!file) return;
-        await addPresentationFile({ name: name.trim(), category, file, openMode });
+        await addPresentationFile({ name: name.trim(), category, file, openMode, allowDownload });
       } else {
         if (!url.trim()) return;
-        await addPresentationUrl({ name: name.trim(), category, url: url.trim(), openMode });
+        await addPresentationUrl({ name: name.trim(), category, url: url.trim(), openMode, allowDownload });
       }
       onClose();
     } catch (e) {
@@ -216,6 +217,33 @@ export function UploadModal({
                 className="accent-brand w-4 h-4"
               />
               <span className="text-sm">새 탭</span>
+            </label>
+          </div>
+        </div>
+
+        {/* 다운로드 허용 */}
+        <div className="mb-6">
+          <span className="text-xs font-medium text-muted-foreground mb-2 block">다운로드 허용</span>
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="allowDownload"
+                checked={allowDownload}
+                onChange={() => setAllowDownload(true)}
+                className="accent-brand w-4 h-4"
+              />
+              <span className="text-sm">허용</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="allowDownload"
+                checked={!allowDownload}
+                onChange={() => setAllowDownload(false)}
+                className="accent-brand w-4 h-4"
+              />
+              <span className="text-sm">비허용</span>
             </label>
           </div>
         </div>

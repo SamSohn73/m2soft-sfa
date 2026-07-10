@@ -20,6 +20,7 @@ export type Presentation = {
   createdAt: number;
   team?: Team;
   openMode?: OpenMode;
+  allowDownload?: boolean;
 };
 
 export type Category = { key: string; label: string };
@@ -191,6 +192,7 @@ export async function addPresentationFile(input: {
   category: string;
   file: File;
   openMode?: OpenMode;
+  allowDownload?: boolean;
 }): Promise<Presentation> {
   const fd = new FormData();
   fd.append("name", input.name);
@@ -198,6 +200,7 @@ export async function addPresentationFile(input: {
   fd.append("sourceType", "file");
   fd.append("file", input.file);
   fd.append("openMode", input.openMode ?? "inline");
+  fd.append("allowDownload", input.allowDownload === false ? "false" : "true");
   return submit(fd);
 }
 
@@ -206,6 +209,7 @@ export async function addPresentationUrl(input: {
   category: string;
   url: string;
   openMode?: OpenMode;
+  allowDownload?: boolean;
 }): Promise<Presentation> {
   const fd = new FormData();
   fd.append("name", input.name);
@@ -213,6 +217,7 @@ export async function addPresentationUrl(input: {
   fd.append("sourceType", "url");
   fd.append("url", input.url);
   fd.append("openMode", input.openMode ?? "inline");
+  fd.append("allowDownload", input.allowDownload === false ? "false" : "true");
   return submit(fd);
 }
 
@@ -298,3 +303,16 @@ export async function changeOpenMode(id: string, openMode: OpenMode): Promise<vo
   notify();
 }
 
+
+export async function changeAllowDownload(id: string, allowDownload: boolean): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/presentations/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "x-app-password": getPassword(),
+    },
+    body: JSON.stringify({ allowDownload }),
+  });
+  if (!res.ok) throw new Error(`다운로드 설정 변경 실패 (${res.status})`);
+  notify();
+}
