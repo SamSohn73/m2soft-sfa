@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { buildViewerUrl } from "@/lib/viewer";
 import type { Presentation } from "@/lib/store";
+import { isAdmin } from "@/lib/store";
 import {
   FileQuestion, Download, ExternalLink,
   ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Layers,
@@ -534,11 +535,17 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
             <FileQuestion className="h-9 w-9 text-primary-foreground" />
           </div>
           <h2 className="text-2xl font-bold mb-2">문서를 선택하세요</h2>
-          <p className="text-muted-foreground text-sm">
-            좌측 사이드바에서{" "}
-            <span className="text-brand font-semibold">프리젠테이션 등록</span>{" "}
-            버튼을 눌러 PDF, Word, Excel, PPT, 이미지, 유튜브, Google Drive 링크 등을 추가하세요.
-          </p>
+          {isAdmin() ? (
+            <p className="text-muted-foreground text-sm">
+              좌측 사이드바에서{" "}
+              <span className="text-brand font-semibold">프리젠테이션 등록</span>{" "}
+              버튼을 눌러 PDF, Word, Excel, PPT, 이미지, 유튜브, Google Drive 링크 등을 추가하세요.
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              좌측 사이드바에서 문서를 선택하세요.
+            </p>
+          )}
         </div>
       </div>
     );
