@@ -1,5 +1,5 @@
 import { ChevronLeft, Edit2, Trash2, ExternalLink, Eye, Calendar, User, Paperclip, Download } from "lucide-react";
-import { parseAttachments, attachmentDownloadUrl, formatFileSize, type Board, type Post } from "@/lib/store";
+import { parseAttachments, downloadAttachment, formatFileSize, type Board, type Post } from "@/lib/store";
 
 export function BoardPostView({
   board, post, onBack, onEdit, onDelete, onRefresh,
@@ -90,10 +90,10 @@ export function BoardPostView({
               </h3>
               <div className="space-y-2">
                 {attachments.map(att => (
-                  <a
+                  <button
                     key={att.stored}
-                    href={attachmentDownloadUrl(board.id, att)}
-                    className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border hover:border-brand/40 hover:bg-accent/30 transition group"
+                    onClick={() => downloadAttachment(board.id, att).catch(() => alert("다운로드에 실패했습니다"))}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-border hover:border-brand/40 hover:bg-accent/30 transition group text-left"
                   >
                     <div className="h-9 w-9 rounded-lg bg-brand/10 grid place-items-center shrink-0">
                       <Download className="h-4 w-4 text-brand" />
@@ -102,7 +102,7 @@ export function BoardPostView({
                       <p className="text-sm font-medium truncate">{att.name}</p>
                       <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
                     </div>
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>

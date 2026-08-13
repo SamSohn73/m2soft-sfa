@@ -374,6 +374,24 @@ export function attachmentDownloadUrl(boardId: string, att: Attachment): string 
   return `${API_BASE}/api/boards/${boardId}/attachments/${att.stored}?name=${encodeURIComponent(att.name)}`;
 }
 
+// ── 첨부파일 다운로드 (인증 헤더 포함, Blob 방식) ──────────────
+export async function downloadAttachment(boardId: string, att: Attachment): Promise<void> {
+  const url = attachmentDownloadUrl(boardId, att);
+  const res = await fetch(url, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("다운로드 실패");
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = att.name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;

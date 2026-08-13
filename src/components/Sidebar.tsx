@@ -460,9 +460,10 @@ export function Sidebar({
 
   useEffect(() => { setMounted(true); }, []);
 
-  const sensors = useSensors(useSensor(PointerSensor, {
+  const pointerSensor = useSensor(PointerSensor, {
     activationConstraint: { distance: 5 },
-  }));
+  });
+  const sensors = useSensors(pointerSensor);
 
   useEffect(() => {
     let cancelled = false;
@@ -801,7 +802,7 @@ export function Sidebar({
         {/* Nav */}
         <nav className="mt-3 px-2 flex-1 overflow-y-auto pb-4 flex flex-col">
           <DndContext
-            sensors={mounted ? sensors : undefined}
+            sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleCatDragEnd}
           >
@@ -865,7 +866,7 @@ export function Sidebar({
               )}
             </div>
             <DndContext
-              sensors={mounted ? sensors : undefined}
+              sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleBoardDragEnd}
             >
