@@ -638,6 +638,342 @@ app.put("/api/presentations/reorder", requirePassword, requireAdmin, async (req,
   }
 });
 
+
+// ══════════════════════════════════════════════════════════════
+// 게시판 API
+// ══════════════════════════════════════════════════════════════
+
+const BOARDS_PATH = path.join(DATA_DIR, "boards.json");
+const POST_ATTACH_DIR = path.join(UPLOAD_DIR, "board_attachments");
+fs.mkdirSync(POST_ATTACH_DIR, { recursive: true });
+
+function readBoards() {
+  if (!fs.existsSync(BOARDS_PATH)) {
+    fs.writeFileSync(BOARDS_PATH, JSON.stringify([]), "utf8");
+  }
+  try { return JSON.parse(fs.readFileSync(BOARDS_PATH, "utf8")); }
+  catch { return []; }
+}
+function writeBoards(boards) {
+  fs.writeFileSync(BOARDS_PATH, JSON.stringify(boards, null, 2), "utf8");
+}
+
+const POST_HEADERS = ["id","boardId","title","content","author","team","createdAt","updatedAt","views","thumbnail","url","sourceName","attachments"];
+
+function postsPath(boardId) {
+  return path.join(DATA_DIR, `posts_${boardId}.csv`);
+}
+function readPosts(boardId) {
+  const p = postsPath(boardId);
+  if (!fs.existsSync(p)) {
+    fs.writeFileSync(p, csvStringify([POST_HEADERS]), "utf8");
+    return [];
+  }
+  const rows = csvParse(fs.readFileSync(p, "utf8"));
+  if (rows.length === 0) return [];
+  const [, ...data] = rows;
+  return data.map(r => {
+    const obj = {};
+    POST_HEADERS.forEach((h, i) => { obj[h] = r[i] ?? ""; });
+    obj.views = parseInt(obj.views) || 0;
+    return obj;
+  });
+}
+function writePosts(boardId, posts) {
+  const out = [POST_HEADERS, ...posts.map(p => POST_HEADERS.map(h => {
+    const v = p[h];
+    return v === undefined || v === null ? "" : String(v);
+  }))];
+  fs.writeFileSync(postsPath(boardId), csvStringify(out), "utf8");
+}
+
+// ── 게시판 목록/CRUD ────────────────────────────────────────
+app.get("/api/boards", requirePassword, (req, res) => {
+  const boards = readBoards();
+  const filtered = boards.filter(b => b.team === "both" || b.team === req.team);
+  res.json(filtered);
+});
+
+app.post("/api/boards", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { name, type, allowWrite, team, secret } = req.body || {};
+    if (!name || !type) return res.status(400).json({ error: "name and type required" });
+    const boards = readBoards();
+    const id = crypto.randomUUID();
+    const newBoard = {
+      id, name: String(name).trim(),
+      type: type === "card" ? "card" : "list",
+      allowWrite: allowWrite === "all" ? "all" : "admin",
+      team: team === "both" ? "both" : req.team,
+      secret: secret === true,
+      createdAt: new Date().toISOString().split("T")[0],
+      order: boards.length,
+    };
+    boards.push(newBoard);
+    writeBoards(boards);
+    fs.writeFileSync(postsPath(id), csvStringify([POST_HEADERS]), "utf8");
+    logAccess(req, "BOARD_CREATE", newBoard.name);
+    res.json(newBoard);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.patch("/api/boards/:boardId", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const { name, allowWrite } = req.body || {};
+    const boards = readBoards();
+    const idx = boards.findIndex(b => b.id === boardId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+    if (name) boards[idx].name = String(name).trim();
+    if (allowWrite) boards[idx].allowWrite = allowWrite === "all" ? "all" : "admin";
+    writeBoards(boards);
+    logAccess(req, "BOARD_UPDATE", boards[idx].name);
+    res.json(boards[idx]);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.delete("/api/boards/:boardId", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const boards = readBoards();
+    const idx = boards.findIndex(b => b.id === boardId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+    const name = boards[idx].name;
+    boards.splice(idx, 1);
+    writeBoards(boards);
+    const p = postsPath(boardId);
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+    // 첨부파일 폴더 삭제
+    const attachDir = path.join(POST_ATTACH_DIR, boardId);
+    if (fs.existsSync(attachDir)) fs.rmSync(attachDir, { recursive: true, force: true });
+    logAccess(req, "BOARD_DELETE", name);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.put("/api/boards/reorder", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids)) return res.status(400).json({ error: "ids required" });
+    const boards = readBoards();
+    const reordered = ids.map((id, i) => {
+      const b = boards.find(b => b.id === id);
+      if (b) b.order = i;
+      return b;
+    }).filter(Boolean);
+    const untouched = boards.filter(b => !ids.includes(b.id));
+    writeBoards([...reordered, ...untouched]);
+    logAccess(req, "BOARD_REORDER");
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── 게시글 목록/상세 ────────────────────────────────────────
+app.get("/api/boards/:boardId/posts", requirePassword, (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const boards = readBoards();
+    const board = boards.find(b => b.id === boardId);
+    if (!board) return res.status(404).json({ error: "board not found" });
+    const posts = readPosts(boardId);
+    const filtered = posts.filter(p => p.team === req.team || board.team === "both");
+    filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json(filtered);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.get("/api/boards/:boardId/posts/:postId", requirePassword, (req, res) => {
+  try {
+    const { boardId, postId } = req.params;
+    const posts = readPosts(boardId);
+    const idx = posts.findIndex(p => p.id === postId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+    posts[idx].views = (parseInt(posts[idx].views) || 0) + 1;
+    writePosts(boardId, posts);
+    logAccess(req, "POST_VIEW", posts[idx].title);
+    res.json(posts[idx]);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── 게시글 첨부파일 업로드 설정 (최대 3개, 파일당 200MB) ────
+const boardAttachUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const boardId = req.params.boardId;
+      const dir = path.join(POST_ATTACH_DIR, boardId);
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (_req, file, cb) => {
+      const id = crypto.randomUUID();
+      const ext = path.extname(file.originalname) || "";
+      cb(null, `${id}${ext}`);
+    },
+  }),
+  limits: { fileSize: 200 * 1024 * 1024, files: 3 },
+});
+
+// ── 게시글 작성 (첨부파일 최대 3개) ───────────────────────
+app.post("/api/boards/:boardId/posts", requirePassword, boardAttachUpload.array("files", 3), (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const boards = readBoards();
+    const board = boards.find(b => b.id === boardId);
+    if (!board) return res.status(404).json({ error: "board not found" });
+    if (board.allowWrite === "admin" && req.role !== "admin") {
+      return res.status(403).json({ error: "forbidden" });
+    }
+    const { title, content, thumbnail, url, sourceName } = req.body || {};
+    if (!title) return res.status(400).json({ error: "title required" });
+
+    // 첨부파일 메타데이터 구성: name|storedFilename|size 를 ; 로 구분
+    const attachments = (req.files || []).map(f => {
+      const origNameEnc = encodeURIComponent(f.originalname);
+      return `${origNameEnc}|${f.filename}|${f.size}`;
+    }).join(";");
+
+    const posts = readPosts(boardId);
+    const newPost = {
+      id: crypto.randomUUID(),
+      boardId,
+      title: String(title).trim(),
+      content: String(content || "").trim(),
+      author: req.team + "/" + req.role,
+      team: req.team,
+      createdAt: new Date().toISOString().split("T")[0],
+      updatedAt: new Date().toISOString().split("T")[0],
+      views: 0,
+      thumbnail: thumbnail || "",
+      url: url || "",
+      sourceName: sourceName || "",
+      attachments,
+    };
+    posts.unshift(newPost);
+    writePosts(boardId, posts);
+    logAccess(req, "POST_CREATE", newPost.title);
+    res.json(newPost);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── 게시글 수정 (첨부파일 추가만 가능, 기존 것은 유지) ──────
+app.patch("/api/boards/:boardId/posts/:postId", requirePassword, requireAdmin, boardAttachUpload.array("files", 3), (req, res) => {
+  try {
+    const { boardId, postId } = req.params;
+    const { title, content, thumbnail, url, sourceName, keepAttachments } = req.body || {};
+    const posts = readPosts(boardId);
+    const idx = posts.findIndex(p => p.id === postId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+
+    if (title) posts[idx].title = String(title).trim();
+    if (content !== undefined) posts[idx].content = String(content).trim();
+    if (thumbnail !== undefined) posts[idx].thumbnail = thumbnail;
+    if (url !== undefined) posts[idx].url = url;
+    if (sourceName !== undefined) posts[idx].sourceName = sourceName;
+
+    // keepAttachments: 프론트에서 유지할 기존 첨부파일 메타데이터 문자열(;구분) 전달
+    let attachList = keepAttachments !== undefined ? String(keepAttachments) : posts[idx].attachments;
+    const existing = attachList ? attachList.split(";").filter(Boolean) : [];
+
+    const newOnes = (req.files || []).map(f => {
+      const origNameEnc = encodeURIComponent(f.originalname);
+      return `${origNameEnc}|${f.filename}|${f.size}`;
+    });
+
+    const combined = [...existing, ...newOnes].slice(0, 3);
+    posts[idx].attachments = combined.join(";");
+    posts[idx].updatedAt = new Date().toISOString().split("T")[0];
+
+    writePosts(boardId, posts);
+    logAccess(req, "POST_UPDATE", posts[idx].title);
+    res.json(posts[idx]);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.delete("/api/boards/:boardId/posts/:postId", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId, postId } = req.params;
+    const posts = readPosts(boardId);
+    const idx = posts.findIndex(p => p.id === postId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+    const title = posts[idx].title;
+
+    // 첨부파일 실제 삭제
+    const attachments = (posts[idx].attachments || "").split(";").filter(Boolean);
+    for (const a of attachments) {
+      const [, stored] = a.split("|");
+      if (stored) {
+        const filePath = path.join(POST_ATTACH_DIR, boardId, stored);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+    }
+
+    posts.splice(idx, 1);
+    writePosts(boardId, posts);
+    logAccess(req, "POST_DELETE", title);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── 첨부파일 개별 삭제 (수정 화면에서 X 버튼용) ─────────────
+app.delete("/api/boards/:boardId/posts/:postId/attachments/:storedName", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId, postId, storedName } = req.params;
+    const posts = readPosts(boardId);
+    const idx = posts.findIndex(p => p.id === postId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+
+    const attachments = (posts[idx].attachments || "").split(";").filter(Boolean);
+    const remaining = attachments.filter(a => {
+      const [, stored] = a.split("|");
+      return stored !== storedName;
+    });
+    posts[idx].attachments = remaining.join(";");
+    writePosts(boardId, posts);
+
+    const filePath = path.join(POST_ATTACH_DIR, boardId, storedName);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── 첨부파일 다운로드 ────────────────────────────────────────
+app.get("/api/boards/:boardId/attachments/:storedName", requirePassword, (req, res) => {
+  try {
+    const { boardId, storedName } = req.params;
+    const { name } = req.query; // 원본 파일명 (표시용, 인코딩됨)
+    const filePath = path.join(POST_ATTACH_DIR, boardId, storedName);
+    if (!filePath.startsWith(POST_ATTACH_DIR) || !fs.existsSync(filePath)) {
+      return res.status(404).send("not found");
+    }
+    const displayName = name ? decodeURIComponent(String(name)) : storedName;
+    res.download(filePath, displayName);
+  } catch (e) {
+    res.status(500).send(String(e?.message || e));
+  }
+});
+
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {

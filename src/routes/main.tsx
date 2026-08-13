@@ -6,6 +6,9 @@ import { UploadModal } from "@/components/UploadModal";
 import { PasswordModal } from "@/components/PasswordModal";
 import { getPresentations, isAuthed, type Presentation } from "@/lib/store";
 import { Menu, PanelLeftOpen } from "lucide-react";
+import { BoardList } from "@/components/BoardList";
+import { BoardCard } from "@/components/BoardCard";
+import type { Board } from "@/lib/store";
 import { buildViewerUrl } from "@/lib/viewer";
 
 export const Route = createFileRoute("/main")({
@@ -28,6 +31,39 @@ function MainPage() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(290);
   const [sidebarResizing, setSidebarResizing] = useState(false);
+  const [selectedBoard, setSelectedBoard] = useState<Board | null>(null);
+  const [secretUnlocked, setSecretUnlocked] = useState(false);
+
+  // ── 이스터에그 A: 코나미 코드 ↑↓↑↓↑↑↑↑↓ ──────────────
+  const KONAMI = ["ArrowUp","ArrowDown","ArrowUp","ArrowDown","ArrowUp","ArrowUp","ArrowUp","ArrowUp","ArrowDown"];
+  const konamiRef = useRef<string[]>([]);
+
+
+  const unlockSecret = () => {
+    setSecretUnlocked(true);
+    // 잠금 해제 효과
+    const msg = document.createElement("div");
+    msg.textContent = "🔓 비밀 게시판 잠금 해제!";
+    msg.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#2E5E4E;color:white;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;z-index:9999;animation:fadeIn .3s ease;pointer-events:none";
+    document.body.appendChild(msg);
+    setTimeout(() => msg.remove(), 2000);
+  };
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      konamiRef.current.push(e.key);
+      if (konamiRef.current.length > KONAMI.length) {
+        konamiRef.current.shift();
+      }
+      if (JSON.stringify(konamiRef.current) === JSON.stringify(KONAMI)) {
+        konamiRef.current = [];
+        unlockSecret();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
+
 
   // 스와이프 감지용
   const touchStartX = useRef<number | null>(null);
@@ -115,6 +151,9 @@ function MainPage() {
           onOpenPassword={() => setPwdOpen(true)}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          onSelectBoard={(board) => { setSelectedBoard(board); setSelected(null); setSidebarOpen(false); }}
+          selectedBoardId={selectedBoard?.id ?? null}
+          secretUnlocked={secretUnlocked}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           width={sidebarWidth}
@@ -133,6 +172,9 @@ function MainPage() {
           onOpenPassword={() => setPwdOpen(true)}
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          onSelectBoard={(board) => { setSelectedBoard(board); setSelected(null); setSidebarOpen(false); }}
+          selectedBoardId={selectedBoard?.id ?? null}
+          secretUnlocked={secretUnlocked}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           width={sidebarWidth}
@@ -163,7 +205,7 @@ function MainPage() {
           <img
             src="/logo_white.png"
             alt="M2SOFT"
-            className="h-7 w-auto object-contain"
+            className="h-7 w-auto object-contain cursor-pointer"
           />
         </div>
 
@@ -171,7 +213,13 @@ function MainPage() {
           {sidebarResizing && (
             <div className="absolute inset-0 z-50" />
           )}
-          <Viewer presentation={selected} />
+          {selectedBoard ? (
+            selectedBoard.type === "card"
+              ? <BoardCard board={selectedBoard} />
+              : <BoardList board={selectedBoard} />
+          ) : (
+            <Viewer presentation={selected} />
+          )}
         </div>
       </main>
 

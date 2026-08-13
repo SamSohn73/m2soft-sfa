@@ -20,6 +20,7 @@ import {
   getCategories,
   getPresentations,
   getTeam,
+  isAuthed,
   isAdmin,
   removePresentation,
   removeCategory,
@@ -31,11 +32,17 @@ import {
   TEAM_LABELS,
   type Category,
   type Presentation,
+  getBoards,
+  deleteBoard,
+  reorderBoards,
+  updateBoard,
+  type Board,
 } from "@/lib/store";
 import {
   Plus, Search, Menu, ChevronDown, ChevronRight,
   KeyRound, LogOut, X, FileText, Trash2, Pencil,
   FolderPlus, PanelLeftClose, GripVertical, ExternalLink, Download,
+  LayoutList, Newspaper, Lock,
 } from "lucide-react";
 import {
   ContextMenu, ContextMenuContent,
@@ -43,12 +50,16 @@ import {
 } from "@/components/ui/context-menu";
 import { OpenModeModal } from "@/components/OpenModeModal";
 import { DownloadModal } from "@/components/DownloadModal";
+import { BoardCreateModal } from "@/components/BoardCreateModal";
 
 type Props = {
   selectedId: string | null;
   onSelect: (p: Presentation) => void;
   onOpenUpload: (categoryKey?: string) => void;
   onOpenPassword: () => void;
+  onSelectBoard: (board: Board | null) => void;
+  selectedBoardId: string | null;
+  secretUnlocked: boolean;
   open: boolean;
   onClose: () => void;
   collapsed?: boolean;
@@ -324,8 +335,93 @@ function SortablePresentationItem({
   );
 }
 
+// ── SortableBoardItem ─────────────────────────────────────────
+function SortableBoardItem({
+  board, admin, selected, renamingBoardId, renameBoardValue,
+  onSelect, onRenameStart, onRenameChange, onRenameCommit, onRenameCancel, onDeleteRequest,
+}: {
+  board: Board;
+  admin: boolean;
+  selected: boolean;
+  renamingBoardId: string | null;
+  renameBoardValue: string;
+  onSelect: () => void;
+  onRenameStart: () => void;
+  onRenameChange: (v: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  onDeleteRequest: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: board.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={setNodeRef}
+          style={style}
+          className={[
+            "flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition text-sm",
+            selected ? "bg-sidebar-hover text-foreground" : "text-sidebar-foreground hover:bg-sidebar-hover",
+          ].join(" ")}
+          onClick={onSelect}
+        >
+          {admin && (
+            <span
+              {...attributes}
+              {...listeners}
+              onClick={e => e.stopPropagation()}
+              className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-brand transition"
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </span>
+          )}
+          {board.secret ? (
+            <Lock className="h-4 w-4 text-brand shrink-0" />
+          ) : board.type === "card" ? (
+            <Newspaper className="h-4 w-4 text-muted-foreground shrink-0" />
+          ) : (
+            <LayoutList className="h-4 w-4 text-muted-foreground shrink-0" />
+          )}
+          {renamingBoardId === board.id ? (
+            <input
+              autoFocus
+              value={renameBoardValue}
+              onChange={e => onRenameChange(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") onRenameCommit();
+                else if (e.key === "Escape") onRenameCancel();
+              }}
+              onBlur={onRenameCancel}
+              onClick={e => e.stopPropagation()}
+              className="flex-1 bg-transparent outline-none border-b border-brand text-sm"
+            />
+          ) : (
+            <span className="flex-1 truncate">{board.name}</span>
+          )}
+        </div>
+      </ContextMenuTrigger>
+      {admin && (
+        <ContextMenuContent className="w-44">
+          <ContextMenuItem onClick={onRenameStart}>
+            <Pencil className="h-4 w-4 mr-2 text-brand" /> 이름변경
+          </ContextMenuItem>
+          <ContextMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={onDeleteRequest}
+          >
+            <Trash2 className="h-4 w-4 mr-2" /> 삭제
+          </ContextMenuItem>
+        </ContextMenuContent>
+      )}
+    </ContextMenu>
+  );
+}
+
+
 export function Sidebar({
-  selectedId, onSelect, onOpenUpload, onOpenPassword,
+  selectedId, onSelect, onOpenUpload, onOpenPassword, onSelectBoard, selectedBoardId, secretUnlocked,
   open, onClose, collapsed = false, onToggleCollapse,
   width = 280, onWidthChange, onResizeStart, onResizeEnd,
 }: Props) {
@@ -346,6 +442,20 @@ export function Sidebar({
   const [pendingCats, setPendingCats] = useState<Category[] | null>(null);
   const [pendingItems, setPendingItems] = useState<{ catKey: string; items: Presentation[] } | null>(null);
   const [openModeTarget, setOpenModeTarget] = useState<Presentation | null>(null);
+  const [boards, setBoards] = useState<Board[]>([]);
+  const [showBoardCreate, setShowBoardCreate] = useState(false);
+  const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
+  const [renameBoardValue, setRenameBoardValue] = useState("");
+  const [boardToDelete, setBoardToDelete] = useState<Board | null>(null);
+
+  const loadBoards = () => {
+    if (!isAuthed()) return;
+    getBoards().then(list => setBoards(list.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)))).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (isAuthed()) loadBoards();
+  }, []);
   const [downloadTarget, setDownloadTarget] = useState<Presentation | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
@@ -514,6 +624,18 @@ export function Sidebar({
     });
   };
 
+  const handleBoardDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const filtered = boards.filter(b => !b.secret || secretUnlocked);
+    const oldIdx = filtered.findIndex(b => b.id === active.id);
+    const newIdx = filtered.findIndex(b => b.id === over.id);
+    const newBoards = arrayMove(filtered, oldIdx, newIdx);
+    setBoards(newBoards);
+    reorderBoards(newBoards.map(b => b.id)).catch(() => {});
+  };
+
+
   const handleItemDragEnd = (catKey: string) => (event: DragEndEvent) => {
     if (!admin) return;
     const { active, over } = event;
@@ -630,7 +752,7 @@ export function Sidebar({
               alt="M2SOFT"
               className="h-10 w-auto object-contain"
             />
-            {getTeam() && (
+            {mounted && getTeam() && (
               <span className="px-1.5 py-0.5 rounded-full bg-brand/20 text-brand font-semibold text-[10px]">
                 {TEAM_LABELS[getTeam()!]}
               </span>
@@ -728,6 +850,49 @@ export function Sidebar({
               </div>
             </SortableContext>
           </DndContext>
+          {/* ── 게시판 섹션 ── */}
+          <div className="mt-1 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between px-2 mb-0.5">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">게시판</span>
+              {admin && (
+                <button
+                  onClick={() => setShowBoardCreate(true)}
+                  className="h-5 w-5 grid place-items-center rounded hover:bg-accent transition"
+                  title="게시판 추가"
+                >
+                  <Plus className="h-3 w-3 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+            <DndContext
+              sensors={mounted ? sensors : undefined}
+              collisionDetection={closestCenter}
+              onDragEnd={handleBoardDragEnd}
+            >
+              <SortableContext items={boards.filter(b => !b.secret || secretUnlocked).map(b => b.id)}>
+                {boards.filter(b => !b.secret || secretUnlocked).map(board => (
+                  <SortableBoardItem
+                    key={board.id}
+                    board={board}
+                    admin={admin}
+                    selected={selectedBoardId === board.id}
+                    renamingBoardId={renamingBoardId}
+                    renameBoardValue={renameBoardValue}
+                    onSelect={() => onSelectBoard(board)}
+                    onRenameStart={() => { setRenameBoardValue(board.name); setRenamingBoardId(board.id); }}
+                    onRenameChange={setRenameBoardValue}
+                    onRenameCommit={() => { updateBoard(board.id, { name: renameBoardValue.trim() }).then(loadBoards); setRenamingBoardId(null); }}
+                    onRenameCancel={() => setRenamingBoardId(null)}
+                    onDeleteRequest={() => setBoardToDelete(board)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+            {boards.filter(b => !b.secret || secretUnlocked).length === 0 && (
+              <p className="text-xs text-muted-foreground px-2 py-1">게시판이 없습니다</p>
+            )}
+          </div>
+
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div className="flex-1 min-h-20" />
@@ -743,7 +908,47 @@ export function Sidebar({
         </nav>
 
         {/* Footer */}
-        <div className="relative border-t border-border p-3">
+        
+
+      {/* 게시판 삭제 확인 모달 */}
+      {boardToDelete && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setBoardToDelete(null)}
+        >
+          <div
+            className="w-72 rounded-2xl bg-card border border-border shadow-2xl p-5"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-base mb-2">게시판 삭제</h3>
+            <p className="text-sm text-muted-foreground mb-5">
+              <span className="text-foreground font-semibold">"{boardToDelete.name}"</span> 게시판과<br/>
+              모든 게시글이 삭제됩니다. 계속하시겠습니까?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setBoardToDelete(null)}
+                className="flex-1 h-9 rounded-lg border border-border hover:bg-accent transition text-sm font-medium"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => { deleteBoard(boardToDelete.id).then(loadBoards); setBoardToDelete(null); }}
+                className="flex-1 h-9 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition text-sm font-semibold"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 게시판 생성 모달 */}
+      {showBoardCreate && (
+        <BoardCreateModal onClose={(created) => { setShowBoardCreate(false); if (created) loadBoards(); }} />
+      )}
+
+      <div className="relative border-t border-border p-3">
           {menuOpen && (
             <div className="absolute bottom-full left-3 right-3 mb-2 rounded-xl bg-popover border border-border shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-2">
               <button
