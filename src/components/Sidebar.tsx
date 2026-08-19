@@ -853,9 +853,9 @@ export function Sidebar({
           </DndContext>
           {/* ── 게시판 섹션 ── */}
           <div className="mt-1 pt-2 border-t border-border/50">
-            <div className="flex items-center justify-between px-2 mb-0.5">
-              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">게시판</span>
-              {admin && (
+            {admin && (
+              <div className="flex items-center justify-between px-2 mb-0.5">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">게시판</span>
                 <button
                   onClick={() => setShowBoardCreate(true)}
                   className="h-5 w-5 grid place-items-center rounded hover:bg-accent transition"
@@ -863,8 +863,8 @@ export function Sidebar({
                 >
                   <Plus className="h-3 w-3 text-muted-foreground" />
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
