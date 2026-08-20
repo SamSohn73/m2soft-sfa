@@ -16,7 +16,7 @@ export function CrawlSettingsModal({ boardId, onClose }: { boardId: string; onCl
   const [hour, setHour] = useState(23);
   const [minute, setMinute] = useState(0);
   const [maxPerRun, setMaxPerRun] = useState(100);
-  const [maxInitialBackfill, setMaxInitialBackfill] = useState(100);
+  const [maxInitialBackfill, setMaxInitialBackfill] = useState(500);
   const [searchScope, setSearchScope] = useState<SearchScope>("title_content");
   const [lastRunAt, setLastRunAt] = useState<string | null>(null);
   const [logs, setLogs] = useState<CrawlLog[]>([]);

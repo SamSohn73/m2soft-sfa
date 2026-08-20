@@ -1215,24 +1215,40 @@ async function runCrawlRule(rule) {
           return a.pub - b.pub; // 오래된 순
         });
         const sorted = withDate.map(x => x.item);
-        candidateItems = sorted.slice(0, rule.maxInitialBackfill || 100);
+        // maxInitialBackfill은 안전 상한선(기본 100)이지만, 실제로는 게시판 전체 상한(BOARD_POST_LIMIT)이
+        // 최종 방어선 역할을 하므로 넉넉하게 설정하는 것을 권장 (설정 UI에서 상향 가능)
+        candidateItems = sorted.slice(0, rule.maxInitialBackfill || 500);
       } else {
-        // 정기/즉시 실행: sinceDate 이후 기사를 놓치지 않도록 최신순으로 끝까지(최대 1000개) 페이징하며 수집
-        // (100개만 가져오면 게시글이 많은 키워드의 경우 sinceDate 이후 기사가 100개 안에
-        //  다 들어있지 않아 일부 기간이 통째로 누락되는 문제가 있었음)
-        const allItems = await searchNaverNewsAll(keyword); // 최신순, 최대 1000개
+        // 정기/즉시 실행: sinceDate 이후 구간을 "키워드+연도" 형태로 연도별 세분화해서 검색
+        // (단순히 "최신 1000개"만 가져오면, 기사가 많은 키워드의 경우 그 1000개가
+        //  전부 최근 1~2년치로만 채워져서 sinceDate와 현재 사이의 중간 연도가 통째로
+        //  누락되는 문제가 있었음 → 연도별로 나눠 검색해 이를 방지)
+        const currentYear = new Date().getFullYear();
+        const sinceYear = sinceDate ? sinceDate.getFullYear() : currentYear;
+        const yearsToSearch = Math.max(1, currentYear - sinceYear + 1);
+
+        const allItems = await searchNaverNewsByYears(keyword, yearsToSearch);
         const filtered = allItems.filter(item => {
           const pub = parsePubDate(item.pubDate);
           const dateOk = sinceDate ? (pub && pub > sinceDate) : true;
           return dateOk && matchesScope(item);
         });
+        // pubDate 기준 오래된 순 정렬 (연도별로 나눠 모았기 때문에 정렬이 필요)
+        const withDate2 = filtered.map(item => ({ item, pub: parsePubDate(item.pubDate) }));
+        withDate2.sort((a, b) => {
+          if (!a.pub && !b.pub) return 0;
+          if (!a.pub) return 1;
+          if (!b.pub) return -1;
+          return a.pub - b.pub; // 오래된 순
+        });
+        const sortedIncremental = withDate2.map(x => x.item);
         // maxPerRun은 안전장치(1회 실행당 과도한 수집 방지)로만 사용, 넉넉한 값 권장
-        candidateItems = filtered.slice(0, rule.maxPerRun || 100);
+        candidateItems = sortedIncremental.slice(0, rule.maxPerRun || 100);
       }
 
       for (const item of candidateItems) {
         if (remainingSlots() <= 0) { stoppedByLimit = true; break; }
-        if (isFirstRun && collected >= (rule.maxInitialBackfill || 100)) break;
+        if (isFirstRun && collected >= (rule.maxInitialBackfill || 500)) break;
         if (!isFirstRun && collected >= (rule.maxPerRun || 100)) break;
 
         const articleUrl = item.originallink || item.link;
@@ -1361,7 +1377,7 @@ app.post("/api/boards/:boardId/crawl-rule", requirePassword, requireAdmin, (req,
       hour: hour ?? 23,
       minute: minute ?? 0,
       maxPerRun: maxPerRun || 5,
-      maxInitialBackfill: maxInitialBackfill || 100,
+      maxInitialBackfill: maxInitialBackfill || 500,
       searchScope: searchScope === "title" ? "title" : "title_content",
       lastRunAt: idx !== -1 ? rules[idx].lastRunAt : null,
       createdAt: idx !== -1 ? rules[idx].createdAt : new Date().toISOString(),
