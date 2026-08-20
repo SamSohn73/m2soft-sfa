@@ -1168,10 +1168,12 @@ async function runCrawlRule(rule) {
   const existingPosts = readPosts(rule.boardId);
   const existingUrls = new Set(existingPosts.map(p => p.url).filter(Boolean));
 
-  // 게시판 내 가장 최신 게시글의 날짜 (정기 실행 시 이 날짜 이후 기사만 수집)
+  // 게시판 내 "자동수집된" 게시글 중 가장 최신 날짜를 기준으로 삼음
+  // (수동으로 등록한 최신 게시글 때문에 sinceDate가 잘못 앞당겨지는 것을 방지)
   let sinceDate = null;
-  if (!isFirstRun && existingPosts.length > 0) {
-    const dates = existingPosts.map(p => new Date(p.createdAt)).filter(d => !isNaN(d.getTime()));
+  if (!isFirstRun) {
+    const autoPosts = existingPosts.filter(p => p.isAutoCollected === "true");
+    const dates = autoPosts.map(p => new Date(p.createdAt)).filter(d => !isNaN(d.getTime()));
     if (dates.length > 0) sinceDate = new Date(Math.max(...dates));
   }
 
@@ -1215,20 +1217,23 @@ async function runCrawlRule(rule) {
         const sorted = withDate.map(x => x.item);
         candidateItems = sorted.slice(0, rule.maxInitialBackfill || 100);
       } else {
-        // 정기/즉시 실행: 최신순으로 가져오되 sinceDate 이후 기사만, maxPerRun개까지
-        const items = await searchNaverNews(keyword, 100, 1); // 최신순 최대 100개
-        const filtered = items.filter(item => {
+        // 정기/즉시 실행: sinceDate 이후 기사를 놓치지 않도록 최신순으로 끝까지(최대 1000개) 페이징하며 수집
+        // (100개만 가져오면 게시글이 많은 키워드의 경우 sinceDate 이후 기사가 100개 안에
+        //  다 들어있지 않아 일부 기간이 통째로 누락되는 문제가 있었음)
+        const allItems = await searchNaverNewsAll(keyword); // 최신순, 최대 1000개
+        const filtered = allItems.filter(item => {
           const pub = parsePubDate(item.pubDate);
           const dateOk = sinceDate ? (pub && pub > sinceDate) : true;
           return dateOk && matchesScope(item);
         });
-        candidateItems = filtered.slice(0, rule.maxPerRun || 5);
+        // maxPerRun은 안전장치(1회 실행당 과도한 수집 방지)로만 사용, 넉넉한 값 권장
+        candidateItems = filtered.slice(0, rule.maxPerRun || 100);
       }
 
       for (const item of candidateItems) {
         if (remainingSlots() <= 0) { stoppedByLimit = true; break; }
         if (isFirstRun && collected >= (rule.maxInitialBackfill || 100)) break;
-        if (!isFirstRun && collected >= (rule.maxPerRun || 5)) break;
+        if (!isFirstRun && collected >= (rule.maxPerRun || 100)) break;
 
         const articleUrl = item.originallink || item.link;
         if (!articleUrl || existingUrls.has(articleUrl)) {

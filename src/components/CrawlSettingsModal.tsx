@@ -15,7 +15,7 @@ export function CrawlSettingsModal({ boardId, onClose }: { boardId: string; onCl
   const [dayOfMonth, setDayOfMonth] = useState(1);
   const [hour, setHour] = useState(23);
   const [minute, setMinute] = useState(0);
-  const [maxPerRun, setMaxPerRun] = useState(5);
+  const [maxPerRun, setMaxPerRun] = useState(100);
   const [maxInitialBackfill, setMaxInitialBackfill] = useState(100);
   const [searchScope, setSearchScope] = useState<SearchScope>("title_content");
   const [lastRunAt, setLastRunAt] = useState<string | null>(null);
@@ -186,14 +186,17 @@ export function CrawlSettingsModal({ boardId, onClose }: { boardId: string; onCl
 
             {/* 수집 개수 */}
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">1회당 최대 수집 개수 (정기 실행 시)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">1회당 최대 수집 개수 상한 (정기/즉시 실행 시)</label>
               <select
                 value={maxPerRun}
                 onChange={e => setMaxPerRun(Number(e.target.value))}
                 className="w-full h-9 px-3 rounded-lg border border-border bg-input text-sm outline-none focus:border-brand transition"
               >
-                {[3, 5, 10, 15, 20].map(n => <option key={n} value={n}>{n}개</option>)}
+                {[20, 50, 100, 200, 500].map(n => <option key={n} value={n}>{n}개</option>)}
               </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                ※ 정기/즉시 실행 시에는 게시판에 마지막으로 자동수집된 기사 날짜 이후의 새 기사를 모두 가져오며, 이 값은 과도한 수집을 막는 안전 상한선입니다
+              </p>
               <p className="text-xs text-muted-foreground mt-1">
                 ※ 최초 실행 시에는 최근 10개년치를 각각 검색하여, 가장 오래된 기사부터 최대 {maxInitialBackfill}개까지 수집됩니다
               </p>
