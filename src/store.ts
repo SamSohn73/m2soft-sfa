@@ -355,6 +355,8 @@ export type Post = {
   url: string;
   sourceName: string;
   attachments: string; // "name|stored|size;name2|stored2|size2" 형식 원본 문자열
+  isAutoCollected?: string; // "true"면 자동수집된 게시글
+  matchedKeyword?: string;   // 자동수집 시 매칭된 키워드
 };
 
 // ── 첨부파일 문자열 파싱 유틸 ──────────────────────────────────
@@ -372,6 +374,24 @@ export function parseAttachments(raw: string): Attachment[] {
 
 export function attachmentDownloadUrl(boardId: string, att: Attachment): string {
   return `${API_BASE}/api/boards/${boardId}/attachments/${att.stored}?name=${encodeURIComponent(att.name)}`;
+}
+
+// ── 첨부파일 다운로드 (인증 헤더 포함, Blob 방식) ──────────────
+export async function downloadAttachment(boardId: string, att: Attachment): Promise<void> {
+  const url = attachmentDownloadUrl(boardId, att);
+  const res = await fetch(url, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("다운로드 실패");
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = att.name;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
 }
 
 export function formatFileSize(bytes: number): string {
@@ -513,4 +533,92 @@ export async function deleteAttachment(boardId: string, postId: string, storedNa
     headers: { "x-app-password": getPassword() },
   });
   if (!res.ok) throw new Error("첨부파일 삭제 실패");
+}
+
+// ══════════════════════════════════════════════════════════════
+// 뉴스 자동 수집(크롤링) 규칙 API
+// ══════════════════════════════════════════════════════════════
+
+export type ScheduleType = "daily" | "weekly" | "monthly";
+
+export type SearchScope = "title" | "title_content";
+
+export type CrawlRule = {
+  id: string;
+  boardId: string;
+  enabled: boolean;
+  keywords: string[];
+  scheduleType: ScheduleType;
+  dayOfWeek: number;   // 0(일)~6(토), weekly일 때만 의미
+  dayOfMonth: number;  // 1~28, monthly일 때만 의미
+  hour: number;
+  minute: number;
+  maxPerRun: number;
+  maxInitialBackfill: number;
+  searchScope: SearchScope;
+  lastRunAt: string | null;
+  createdAt: string;
+};
+
+export type CrawlLog = {
+  id: string;
+  ruleId: string;
+  ranAt: string;
+  status: "success" | "failed";
+  collected: number;
+  duplicates: number;
+  errorMsg: string | null;
+};
+
+export async function getCrawlRule(boardId: string): Promise<CrawlRule | null> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/crawl-rule`, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("크롤링 규칙 조회 실패");
+  return res.json();
+}
+
+export async function saveCrawlRule(boardId: string, input: {
+  enabled: boolean;
+  keywords: string[];
+  scheduleType: ScheduleType;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  hour: number;
+  minute: number;
+  maxPerRun: number;
+  maxInitialBackfill: number;
+  searchScope: SearchScope;
+}): Promise<CrawlRule> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/crawl-rule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-app-password": getPassword() },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("크롤링 규칙 저장 실패");
+  return res.json();
+}
+
+export async function deleteCrawlRule(boardId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/crawl-rule`, {
+    method: "DELETE",
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("크롤링 규칙 삭제 실패");
+}
+
+export async function runCrawlNow(boardId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/crawl-rule/run-now`, {
+    method: "POST",
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("즉시 실행 실패");
+}
+
+export async function getCrawlLogs(boardId: string): Promise<CrawlLog[]> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/crawl-logs`, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("실행 이력 조회 실패");
+  return res.json();
 }

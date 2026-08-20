@@ -3,6 +3,7 @@ import { getPosts, deletePost, isAdmin, parseAttachments, type Board, type Post 
 import { Plus, Trash2, Edit2, Eye, Paperclip } from "lucide-react";
 import { BoardWrite } from "./BoardWrite";
 import { BoardPostView } from "./BoardPostView";
+import { Pagination } from "./Pagination";
 
 export function BoardList({ board }: { board: Board }) {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -10,6 +11,8 @@ export function BoardList({ board }: { board: Board }) {
   const [writing, setWriting] = useState(false);
   const [editing, setEditing] = useState<Post | null>(null);
   const [viewing, setViewing] = useState<Post | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 20;
   const admin = isAdmin();
   const canWrite = admin || board.allowWrite === "all";
 
@@ -21,7 +24,7 @@ export function BoardList({ board }: { board: Board }) {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [board.id]);
+  useEffect(() => { load(); setCurrentPage(1); }, [board.id]);
 
   const handleDelete = async (post: Post) => {
     if (!confirm(`"${post.title}" 게시글을 삭제하시겠습니까?`)) return;
@@ -51,6 +54,9 @@ export function BoardList({ board }: { board: Board }) {
       />
     );
   }
+
+  const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+  const pagedPosts = posts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="h-full flex flex-col">
@@ -99,7 +105,7 @@ export function BoardList({ board }: { board: Board }) {
               </tr>
             </thead>
             <tbody>
-              {posts.map((post, i) => {
+              {pagedPosts.map((post, i) => {
                 const attCount = parseAttachments(post.attachments).length;
                 return (
                   <tr
@@ -107,7 +113,7 @@ export function BoardList({ board }: { board: Board }) {
                     className="border-b border-border/50 hover:bg-accent/40 transition cursor-pointer"
                     onClick={() => setViewing(post)}
                   >
-                    <td className="px-4 py-3 text-muted-foreground text-center">{posts.length - i}</td>
+                    <td className="px-4 py-3 text-muted-foreground text-center">{posts.length - ((currentPage - 1) * PAGE_SIZE) - i}</td>
                     <td className="px-4 py-3 font-medium truncate max-w-0">
                       <span className="flex items-center gap-1.5">
                         <span className="truncate">{post.title}</span>
@@ -143,6 +149,9 @@ export function BoardList({ board }: { board: Board }) {
           </table>
         )}
       </div>
+      {posts.length > 0 && (
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -8,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { parse as csvParse } from "csv-parse/sync";
 import { stringify as csvStringify } from "csv-stringify/sync";
 import geoip from "geoip-lite";
+import axios from "axios";
+import * as cheerio from "cheerio";
+import cron from "node-cron";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
@@ -658,7 +662,7 @@ function writeBoards(boards) {
   fs.writeFileSync(BOARDS_PATH, JSON.stringify(boards, null, 2), "utf8");
 }
 
-const POST_HEADERS = ["id","boardId","title","content","author","team","createdAt","updatedAt","views","thumbnail","url","sourceName","attachments"];
+const POST_HEADERS = ["id","boardId","title","content","author","team","createdAt","updatedAt","views","thumbnail","url","sourceName","attachments","isAutoCollected","matchedKeyword"];
 
 function postsPath(boardId) {
   return path.join(DATA_DIR, `posts_${boardId}.csv`);
@@ -970,6 +974,425 @@ app.get("/api/boards/:boardId/attachments/:storedName", requirePassword, (req, r
     res.download(filePath, displayName);
   } catch (e) {
     res.status(500).send(String(e?.message || e));
+  }
+});
+
+
+
+// ══════════════════════════════════════════════════════════════
+// 뉴스 자동 수집 (크롤링) 엔진
+// ══════════════════════════════════════════════════════════════
+
+const CRAWL_RULES_PATH = path.join(DATA_DIR, "crawl_rules.json");
+const CRAWL_LOGS_PATH = path.join(DATA_DIR, "crawl_logs.json");
+
+const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || "";
+const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || "";
+const NAVER_API_HUB_BASE = "https://naverapihub.apigw.ntruss.com";
+
+function readCrawlRules() {
+  if (!fs.existsSync(CRAWL_RULES_PATH)) {
+    fs.writeFileSync(CRAWL_RULES_PATH, JSON.stringify([]), "utf8");
+  }
+  try { return JSON.parse(fs.readFileSync(CRAWL_RULES_PATH, "utf8")); }
+  catch { return []; }
+}
+function writeCrawlRules(rules) {
+  fs.writeFileSync(CRAWL_RULES_PATH, JSON.stringify(rules, null, 2), "utf8");
+}
+
+function readCrawlLogs() {
+  if (!fs.existsSync(CRAWL_LOGS_PATH)) {
+    fs.writeFileSync(CRAWL_LOGS_PATH, JSON.stringify([]), "utf8");
+  }
+  try { return JSON.parse(fs.readFileSync(CRAWL_LOGS_PATH, "utf8")); }
+  catch { return []; }
+}
+function writeCrawlLogs(logs) {
+  // 규칙당 최근 30개만 유지
+  fs.writeFileSync(CRAWL_LOGS_PATH, JSON.stringify(logs, null, 2), "utf8");
+}
+function addCrawlLog(entry) {
+  const logs = readCrawlLogs();
+  logs.unshift(entry);
+  writeCrawlLogs(logs.slice(0, 300)); // 전체 최대 300개 보관
+}
+
+// ── cron 표현식 생성 ──────────────────────────────────────────
+function buildCronExpr(rule) {
+  const { scheduleType, hour, minute, dayOfWeek, dayOfMonth } = rule;
+  const m = minute ?? 0;
+  const h = hour ?? 23;
+  if (scheduleType === "daily") return `${m} ${h} * * *`;
+  if (scheduleType === "weekly") return `${m} ${h} * * ${dayOfWeek ?? 6}`;
+  if (scheduleType === "monthly") return `${m} ${h} ${dayOfMonth ?? 1} * *`;
+  return `${m} ${h} * * 6`; // 기본값: 매주 토요일
+}
+
+// ── 네이버 뉴스 검색 (NAVER API HUB) ─────────────────────────
+async function searchNaverNews(keyword, display = 20, start = 1) {
+  if (!NAVER_CLIENT_ID || !NAVER_CLIENT_SECRET) {
+    throw new Error("네이버 API 키가 설정되지 않았습니다 (.env 확인)");
+  }
+  const res = await axios.get(`${NAVER_API_HUB_BASE}/search/v1/news`, {
+    headers: {
+      "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
+      "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET,
+    },
+    params: { query: keyword, display, start, sort: "date" },
+    timeout: 10000,
+  });
+  return res.data.items || [];
+}
+
+// ── 키워드의 전체 검색 결과를 최대 1000개까지 모두 수집 (최신순) ──
+async function searchNaverNewsAll(keyword) {
+  const all = [];
+  for (let start = 1; start <= 901; start += 100) {
+    const display = Math.min(100, 1001 - start);
+    const items = await searchNaverNews(keyword, display, start);
+    if (items.length === 0) break;
+    all.push(...items);
+    if (items.length < display) break; // 더 이상 결과 없음
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return all; // 최신순 정렬 상태
+}
+
+// ── 연도 세분화 검색: 키워드에 연도를 붙여 각각 최대 1000개씩 수집 ──
+// (네이버 뉴스 검색 API는 키워드당 최대 1000개 제한이 있어,
+//  "키워드 + 연도" 형태로 나눠 검색하면 사실상 검색 범위를 연도별로 우회 확장할 수 있음)
+async function searchNaverNewsByYears(keyword, yearsBack = 10) {
+  const currentYear = new Date().getFullYear();
+  const allItems = [];
+  const seenUrls = new Set();
+
+  for (let i = 0; i < yearsBack; i++) {
+    const year = currentYear - i;
+    const yearKeyword = `${keyword} ${year}`;
+    try {
+      const items = await searchNaverNewsAll(yearKeyword);
+      for (const item of items) {
+        const url = item.originallink || item.link;
+        if (url && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          allItems.push(item);
+        }
+      }
+    } catch (e) {
+      console.error(`연도별 검색 실패 (${yearKeyword}):`, e?.message || e);
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  return allItems; // 연도 필터링을 거쳤으므로 정렬은 호출 측에서 처리
+}
+
+// pubDate 문자열 → Date 객체 변환 (네이버 형식: "Mon, 26 Aug 2026 10:00:00 +0900")
+function parsePubDate(pubDate) {
+  const d = new Date(pubDate);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ── 원문 페이지에서 썸네일(og:image) 추출 ────────────────────
+async function fetchThumbnail(url) {
+  try {
+    const res = await axios.get(url, {
+      timeout: 8000,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; M2SOFT-SFA-Bot/1.0)" },
+      maxRedirects: 5,
+    });
+    const $ = cheerio.load(res.data);
+    const ogImage = $('meta[property="og:image"]').attr("content");
+    const ogSiteName = $('meta[property="og:site_name"]').attr("content");
+    return { thumbnail: ogImage || "", siteName: ogSiteName || "" };
+  } catch {
+    return { thumbnail: "", siteName: "" };
+  }
+}
+
+// HTML 태그(<b> 등) 제거 유틸
+function stripHtml(str) {
+  return String(str || "").replace(/<[^>]*>/g, "").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+}
+
+const BOARD_POST_LIMIT = 1000; // 게시판 전체 게시글 수 상한
+
+// ── 실제 크롤링 실행 (규칙 1개 처리) ─────────────────────────
+async function runCrawlRule(rule) {
+  const isFirstRun = !rule.lastRunAt;
+
+  const boards = readBoards();
+  const board = boards.find(b => b.id === rule.boardId);
+  if (!board) {
+    addCrawlLog({
+      id: crypto.randomUUID(), ruleId: rule.id, ranAt: new Date().toISOString(),
+      status: "failed", collected: 0, duplicates: 0, errorMsg: "게시판을 찾을 수 없음",
+    });
+    return;
+  }
+
+  const existingPosts = readPosts(rule.boardId);
+  const existingUrls = new Set(existingPosts.map(p => p.url).filter(Boolean));
+
+  // 게시판 내 가장 최신 게시글의 날짜 (정기 실행 시 이 날짜 이후 기사만 수집)
+  let sinceDate = null;
+  if (!isFirstRun && existingPosts.length > 0) {
+    const dates = existingPosts.map(p => new Date(p.createdAt)).filter(d => !isNaN(d.getTime()));
+    if (dates.length > 0) sinceDate = new Date(Math.max(...dates));
+  }
+
+  const remainingSlots = () => BOARD_POST_LIMIT - existingPosts.length;
+
+  let collected = 0;
+  let duplicates = 0;
+  let errorMsg = null;
+  let stoppedByLimit = false;
+
+  try {
+    for (const keyword of rule.keywords) {
+      if (remainingSlots() <= 0) { stoppedByLimit = true; break; }
+
+      let candidateItems = [];
+
+      const matchesScope = (item) => {
+        const titleText = stripHtml(item.title).toLowerCase();
+        const descText = stripHtml(item.description).toLowerCase();
+        const kw = keyword.toLowerCase();
+        if (rule.searchScope === "title") {
+          return titleText.includes(kw);
+        }
+        return titleText.includes(kw) || descText.includes(kw);
+      };
+
+      if (isFirstRun) {
+        // 최초 백필: 최근 10개년치를 "키워드+연도" 형태로 각각 검색해 최대 1000개 제한을 연도별로 우회 확장
+        // (네이버 뉴스 검색 API의 키워드당 1000개 제한 때문에 기사가 많은 키워드는
+        //  단순 검색만으로는 오래된 기사에 도달할 수 없어 연도 세분화가 필요함)
+        const allItems = await searchNaverNewsByYears(keyword, 10);
+        const scoped = allItems.filter(matchesScope);
+        // pubDate 기준 오래된 순 정렬 (연도별로 나눠 모았기 때문에 정렬이 필요)
+        const withDate = scoped.map(item => ({ item, pub: parsePubDate(item.pubDate) }));
+        withDate.sort((a, b) => {
+          if (!a.pub && !b.pub) return 0;
+          if (!a.pub) return 1;
+          if (!b.pub) return -1;
+          return a.pub - b.pub; // 오래된 순
+        });
+        const sorted = withDate.map(x => x.item);
+        candidateItems = sorted.slice(0, rule.maxInitialBackfill || 100);
+      } else {
+        // 정기/즉시 실행: 최신순으로 가져오되 sinceDate 이후 기사만, maxPerRun개까지
+        const items = await searchNaverNews(keyword, 100, 1); // 최신순 최대 100개
+        const filtered = items.filter(item => {
+          const pub = parsePubDate(item.pubDate);
+          const dateOk = sinceDate ? (pub && pub > sinceDate) : true;
+          return dateOk && matchesScope(item);
+        });
+        candidateItems = filtered.slice(0, rule.maxPerRun || 5);
+      }
+
+      for (const item of candidateItems) {
+        if (remainingSlots() <= 0) { stoppedByLimit = true; break; }
+        if (isFirstRun && collected >= (rule.maxInitialBackfill || 100)) break;
+        if (!isFirstRun && collected >= (rule.maxPerRun || 5)) break;
+
+        const articleUrl = item.originallink || item.link;
+        if (!articleUrl || existingUrls.has(articleUrl)) {
+          if (existingUrls.has(articleUrl)) duplicates++;
+          continue;
+        }
+
+        // 썸네일 + 매체명 보완 (cheerio) - 항상 수행
+        const { thumbnail, siteName } = await fetchThumbnail(articleUrl);
+
+        const pubDateObj = parsePubDate(item.pubDate);
+        const createdAtStr = pubDateObj
+          ? pubDateObj.toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0];
+
+        const newPost = {
+          id: crypto.randomUUID(),
+          boardId: rule.boardId,
+          title: stripHtml(item.title),
+          content: stripHtml(item.description),
+          author: "auto-crawler",
+          team: board.team === "both" ? "both" : board.team,
+          createdAt: createdAtStr,
+          updatedAt: createdAtStr,
+          views: 0,
+          thumbnail,
+          url: articleUrl,
+          sourceName: siteName || "",
+          attachments: "",
+          isAutoCollected: "true",
+          matchedKeyword: keyword,
+        };
+
+        existingPosts.push(newPost);
+        existingUrls.add(articleUrl);
+        collected++;
+
+        // 과도한 요청 방지 딜레이
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      if (stoppedByLimit) break;
+    }
+
+    // 최신순으로 정렬해서 저장 (프론트에서 다시 정렬하지만 안전하게)
+    existingPosts.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    writePosts(rule.boardId, existingPosts);
+
+    addCrawlLog({
+      id: crypto.randomUUID(), ruleId: rule.id, ranAt: new Date().toISOString(),
+      status: "success", collected, duplicates,
+      errorMsg: stoppedByLimit ? `게시판 게시글 상한(${BOARD_POST_LIMIT}개) 도달로 중단됨` : null,
+    });
+  } catch (e) {
+    errorMsg = e?.message || String(e);
+    addCrawlLog({
+      id: crypto.randomUUID(), ruleId: rule.id, ranAt: new Date().toISOString(),
+      status: "failed", collected, duplicates, errorMsg,
+    });
+  }
+
+  // lastRunAt 갱신
+  const rules = readCrawlRules();
+  const idx = rules.findIndex(r => r.id === rule.id);
+  if (idx !== -1) {
+    rules[idx].lastRunAt = new Date().toISOString();
+    writeCrawlRules(rules);
+  }
+}
+
+// ── 스케줄러 등록 관리 ────────────────────────────────────────
+const scheduledTasks = new Map(); // ruleId -> cron task
+
+function scheduleRule(rule) {
+  // 기존 등록된 작업 취소
+  if (scheduledTasks.has(rule.id)) {
+    scheduledTasks.get(rule.id).stop();
+    scheduledTasks.delete(rule.id);
+  }
+  if (!rule.enabled) return;
+
+  const cronExpr = buildCronExpr(rule);
+  const task = cron.schedule(cronExpr, () => {
+    runCrawlRule(rule).catch(e => console.error("크롤링 실행 오류:", e));
+  }, { timezone: "Asia/Seoul" });
+
+  scheduledTasks.set(rule.id, task);
+}
+
+function rescheduleAll() {
+  const rules = readCrawlRules();
+  rules.forEach(scheduleRule);
+}
+
+// 서버 시작 시 저장된 규칙들을 모두 스케줄 등록
+rescheduleAll();
+
+// ── API: 크롤링 규칙 CRUD ────────────────────────────────────
+app.get("/api/boards/:boardId/crawl-rule", requirePassword, requireAdmin, (req, res) => {
+  const rules = readCrawlRules();
+  const rule = rules.find(r => r.boardId === req.params.boardId);
+  res.json(rule || null);
+});
+
+app.post("/api/boards/:boardId/crawl-rule", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const { enabled, keywords, scheduleType, dayOfWeek, dayOfMonth, hour, minute, maxPerRun, maxInitialBackfill, searchScope } = req.body || {};
+
+    if (!Array.isArray(keywords) || keywords.length === 0) {
+      return res.status(400).json({ error: "keywords required" });
+    }
+
+    const rules = readCrawlRules();
+    const idx = rules.findIndex(r => r.boardId === boardId);
+
+    const ruleData = {
+      id: idx !== -1 ? rules[idx].id : crypto.randomUUID(),
+      boardId,
+      enabled: enabled !== false,
+      keywords,
+      scheduleType: scheduleType || "weekly",
+      dayOfWeek: dayOfWeek ?? 6,
+      dayOfMonth: dayOfMonth ?? 1,
+      hour: hour ?? 23,
+      minute: minute ?? 0,
+      maxPerRun: maxPerRun || 5,
+      maxInitialBackfill: maxInitialBackfill || 100,
+      searchScope: searchScope === "title" ? "title" : "title_content",
+      lastRunAt: idx !== -1 ? rules[idx].lastRunAt : null,
+      createdAt: idx !== -1 ? rules[idx].createdAt : new Date().toISOString(),
+    };
+
+    if (idx !== -1) rules[idx] = ruleData;
+    else rules.push(ruleData);
+
+    writeCrawlRules(rules);
+    scheduleRule(ruleData);
+
+    logAccess(req, "CRAWL_RULE_SAVE", boardId);
+    res.json(ruleData);
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.delete("/api/boards/:boardId/crawl-rule", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const rules = readCrawlRules();
+    const idx = rules.findIndex(r => r.boardId === boardId);
+    if (idx === -1) return res.status(404).json({ error: "not found" });
+
+    const ruleId = rules[idx].id;
+    if (scheduledTasks.has(ruleId)) {
+      scheduledTasks.get(ruleId).stop();
+      scheduledTasks.delete(ruleId);
+    }
+    rules.splice(idx, 1);
+    writeCrawlRules(rules);
+
+    logAccess(req, "CRAWL_RULE_DELETE", boardId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── API: 즉시 실행 ────────────────────────────────────────────
+app.post("/api/boards/:boardId/crawl-rule/run-now", requirePassword, requireAdmin, async (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const rules = readCrawlRules();
+    const rule = rules.find(r => r.boardId === boardId);
+    if (!rule) return res.status(404).json({ error: "규칙이 없습니다" });
+
+    // 비동기로 실행하고 즉시 응답 (오래 걸릴 수 있으므로)
+    runCrawlRule(rule).catch(e => console.error("즉시 실행 오류:", e));
+    logAccess(req, "CRAWL_RUN_NOW", boardId);
+    res.json({ ok: true, message: "크롤링이 시작되었습니다" });
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ── API: 실행 이력 조회 ───────────────────────────────────────
+app.get("/api/boards/:boardId/crawl-logs", requirePassword, requireAdmin, (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const rules = readCrawlRules();
+    const rule = rules.find(r => r.boardId === boardId);
+    if (!rule) return res.json([]);
+
+    const logs = readCrawlLogs().filter(l => l.ruleId === rule.id);
+    res.json(logs.slice(0, 20));
+  } catch (e) {
+    res.status(500).json({ error: String(e?.message || e) });
   }
 });
 

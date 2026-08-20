@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { getPosts, deletePost, isAdmin, type Board, type Post } from "@/lib/store";
+import { CrawlSettingsModal } from "./CrawlSettingsModal";
+import { Pagination } from "./Pagination";
+import { Settings, Bot } from "lucide-react";
 import { Plus, Trash2, Edit2, ExternalLink, Image } from "lucide-react";
 import { BoardWrite } from "./BoardWrite";
 
@@ -8,6 +11,9 @@ export function BoardCard({ board }: { board: Board }) {
   const [loading, setLoading] = useState(true);
   const [writing, setWriting] = useState(false);
   const [editing, setEditing] = useState<Post | null>(null);
+  const [showCrawlSettings, setShowCrawlSettings] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 12;
   const admin = isAdmin();
   const canWrite = admin || board.allowWrite === "all";
 
@@ -19,7 +25,7 @@ export function BoardCard({ board }: { board: Board }) {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, [board.id]);
+  useEffect(() => { load(); setCurrentPage(1); }, [board.id]);
 
   const handleDelete = async (post: Post) => {
     if (!confirm(`"${post.title}" 게시글을 삭제하시겠습니까?`)) return;
@@ -37,6 +43,9 @@ export function BoardCard({ board }: { board: Board }) {
     );
   }
 
+  const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+  const pagedPosts = posts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
@@ -44,14 +53,24 @@ export function BoardCard({ board }: { board: Board }) {
           <h2 className="font-bold text-lg">{board.name}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">총 {posts.length}개의 기사</p>
         </div>
-        {canWrite && (
-          <button
-            onClick={() => setWriting(true)}
-            className="h-9 px-4 rounded-lg gradient-brand text-primary-foreground text-sm font-semibold flex items-center gap-1.5 hover:opacity-90 transition"
-          >
-            <Plus className="h-4 w-4" /> 기사 추가
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {admin && (
+            <button
+              onClick={() => setShowCrawlSettings(true)}
+              className="h-9 px-3 rounded-lg border border-border hover:bg-accent transition text-sm font-medium flex items-center gap-1.5"
+            >
+              <Settings className="h-3.5 w-3.5" /> 자동수집
+            </button>
+          )}
+          {canWrite && (
+            <button
+              onClick={() => setWriting(true)}
+              className="h-9 px-4 rounded-lg gradient-brand text-primary-foreground text-sm font-semibold flex items-center gap-1.5 hover:opacity-90 transition"
+            >
+              <Plus className="h-4 w-4" /> 기사 추가
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
@@ -70,17 +89,17 @@ export function BoardCard({ board }: { board: Board }) {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {posts.map(post => (
+            {pagedPosts.map(post => (
               <div
                 key={post.id}
                 className="rounded-xl border border-border bg-card overflow-hidden hover:border-brand/40 transition group"
               >
-                <div className="aspect-video bg-muted/30 relative overflow-hidden">
+                <div className="aspect-video bg-muted/50 relative overflow-hidden flex items-center justify-center">
                   {post.thumbnail ? (
                     <img
                       src={post.thumbnail}
                       alt={post.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      className="max-w-full max-h-full object-contain group-hover:scale-105 transition duration-300"
                       onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
                   ) : (
@@ -93,10 +112,20 @@ export function BoardCard({ board }: { board: Board }) {
                       {post.sourceName}
                     </span>
                   )}
+                  {admin && post.isAutoCollected === "true" && (
+                    <span className="absolute top-2 right-2 text-xs bg-brand/80 text-white px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
+                      <Bot className="h-3 w-3" /> 자동수집
+                    </span>
+                  )}
                 </div>
 
                 <div className="p-4">
                   <h3 className="font-semibold text-sm line-clamp-2 mb-2 leading-snug">{post.title}</h3>
+                  {admin && post.isAutoCollected === "true" && post.matchedKeyword && (
+                    <span className="inline-block text-[10px] text-brand bg-brand/10 px-1.5 py-0.5 rounded mb-2">
+                      #{post.matchedKeyword}
+                    </span>
+                  )}
                   {post.content && (
                     <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{post.content}</p>
                   )}
@@ -138,6 +167,13 @@ export function BoardCard({ board }: { board: Board }) {
           </div>
         )}
       </div>
+      {posts.length > 0 && (
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+      )}
+
+      {showCrawlSettings && (
+        <CrawlSettingsModal boardId={board.id} onClose={() => setShowCrawlSettings(false)} />
+      )}
     </div>
   );
 }
