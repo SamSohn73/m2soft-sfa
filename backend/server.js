@@ -462,15 +462,48 @@ app.get("/api/files/:id", (req, res) => {
     const abs = path.join(__dirname, item.src);
     if (!abs.startsWith(UPLOAD_DIR)) return res.status(400).send("bad path");
     if (!fs.existsSync(abs)) return res.status(404).send("missing file");
-    if (item.mime) res.setHeader("Content-Type", item.mime);
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename*=UTF-8''${encodeURIComponent(item.fileName || item.name)}`,
-    );
+
     req.team = auth.team;
     req.role = auth.role;
     logAccess(req, "FILE_VIEW", item.name);
-    fs.createReadStream(abs).pipe(res);
+
+    const stat = fs.statSync(abs);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    const contentType = item.mime || "application/octet-stream";
+    const dispositionHeader = `inline; filename*=UTF-8''${encodeURIComponent(item.fileName || item.name)}`;
+
+    if (range) {
+      // ── Range 요청 처리 (동영상/오디오 탐색(seek) 지원용) ──
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (isNaN(start) || isNaN(end) || start > end || start < 0 || end >= fileSize) {
+        res.status(416).setHeader("Content-Range", `bytes */${fileSize}`);
+        return res.end();
+      }
+
+      const chunkSize = end - start + 1;
+      res.writeHead(206, {
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize,
+        "Content-Type": contentType,
+        "Content-Disposition": dispositionHeader,
+      });
+      fs.createReadStream(abs, { start, end }).pipe(res);
+    } else {
+      // ── 일반 요청 (Range 미지정) ──
+      res.writeHead(200, {
+        "Content-Length": fileSize,
+        "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": dispositionHeader,
+      });
+      fs.createReadStream(abs).pipe(res);
+    }
   } catch (e) {
     res.status(500).send(String(e?.message || e));
   }
