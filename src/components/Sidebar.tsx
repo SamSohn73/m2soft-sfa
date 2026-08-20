@@ -889,7 +889,7 @@ export function Sidebar({
                 ))}
               </SortableContext>
             </DndContext>
-            {boards.filter(b => !b.secret || secretUnlocked).length === 0 && (
+            {admin && boards.filter(b => !b.secret || secretUnlocked).length === 0 && (
               <p className="text-xs text-muted-foreground px-2 py-1">게시판이 없습니다</p>
             )}
           </div>
