@@ -1,0 +1,7 @@
+# 라이선스상 저장소에 커밋하지 않는 확장 파일 — 직접 받아서 이 폴더에 넣어야 한다.
+# (https://github.com/ebandal/H2Orestart 릴리스 페이지)
+H2Orestart.oxt
+
+# 디버깅용으로 받아둔 테스트 첨부파일들 — 저장소에 필요 없음
+problem*.hwp
+problem*.hwpx

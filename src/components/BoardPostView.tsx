@@ -1,5 +1,5 @@
-import { ChevronLeft, Edit2, Trash2, ExternalLink, Eye, Calendar, User, Paperclip, Download } from "lucide-react";
-import { parseAttachments, downloadAttachment, formatFileSize, type Board, type Post } from "@/lib/store";
+import { ChevronLeft, Edit2, Trash2, ExternalLink, Eye, Calendar, User, Paperclip, Download, FileText, Bot } from "lucide-react";
+import { parseAttachments, downloadAttachment, previewAttachment, formatFileSize, isAdmin, type Board, type Post } from "@/lib/store";
 
 export function BoardPostView({
   board, post, onBack, onEdit, onDelete, onRefresh,
@@ -42,7 +42,19 @@ export function BoardPostView({
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-6 py-8">
-          <h1 className="text-2xl font-bold leading-snug mb-4">{post.title}</h1>
+          <h1 className="text-2xl font-bold leading-snug mb-2">{post.title}</h1>
+
+          {isAdmin() && post.isAutoCollected === "true" && (
+            <div className="flex items-center gap-2 mb-4">
+              <span className="inline-flex items-center gap-1 text-xs text-brand bg-brand/10 px-2 py-0.5 rounded-full">
+                <Bot className="h-3 w-3" />
+                {post.g2bMatchType === "attach" ? "자동수집 (첨부매칭)" : post.g2bMatchType === "title" ? "자동수집 (제목매칭)" : "자동수집"}
+              </span>
+              {post.matchedKeyword && (
+                <span className="text-xs text-muted-foreground">#{post.matchedKeyword}</span>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground mb-6 pb-6 border-b border-border">
             <span className="flex items-center gap-1.5">
@@ -90,19 +102,35 @@ export function BoardPostView({
               </h3>
               <div className="space-y-2">
                 {attachments.map(att => (
-                  <button
+                  <div
                     key={att.stored}
-                    onClick={() => downloadAttachment(board.id, att).catch(() => alert("다운로드에 실패했습니다"))}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-border hover:border-brand/40 hover:bg-accent/30 transition group text-left"
+                    className="w-full flex items-center gap-2 pl-4 pr-2 py-3 rounded-xl border border-border hover:border-brand/40 hover:bg-accent/30 transition group"
                   >
-                    <div className="h-9 w-9 rounded-lg bg-brand/10 grid place-items-center shrink-0">
-                      <Download className="h-4 w-4 text-brand" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{att.name}</p>
-                      <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
-                    </div>
-                  </button>
+                    {/* 문서명 영역 클릭 = 미리보기(새 탭, 브라우저 내장 뷰어) */}
+                    <button
+                      type="button"
+                      onClick={() => previewAttachment(board.id, att).catch((e) => alert(e?.message || "미리보기에 실패했습니다"))}
+                      className="flex-1 min-w-0 flex items-center gap-3 text-left"
+                      title="미리보기"
+                    >
+                      <div className="h-9 w-9 rounded-lg bg-brand/10 grid place-items-center shrink-0">
+                        <FileText className="h-4 w-4 text-brand" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{att.name}</p>
+                        <p className="text-xs text-muted-foreground">{formatFileSize(att.size)}</p>
+                      </div>
+                    </button>
+                    {/* 다운로드 아이콘 클릭 = 파일 다운로드 (미리보기와 별도 동작) */}
+                    <button
+                      type="button"
+                      onClick={() => downloadAttachment(board.id, att).catch(() => alert("다운로드에 실패했습니다"))}
+                      className="h-8 w-8 shrink-0 grid place-items-center rounded-lg hover:bg-accent transition"
+                      title="다운로드"
+                    >
+                      <Download className="h-4 w-4 text-muted-foreground group-hover:text-brand" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

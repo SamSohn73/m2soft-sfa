@@ -357,6 +357,8 @@ export type Post = {
   attachments: string; // "name|stored|size;name2|stored2|size2" 형식 원본 문자열
   isAutoCollected?: string; // "true"면 자동수집된 게시글
   matchedKeyword?: string;   // 자동수집 시 매칭된 키워드
+  g2bRefNo?: string;          // 나라장터 사전규격등록번호 (중복 방지용)
+  g2bMatchType?: string;      // "title" | "attach" - 나라장터 크롤링 매칭 방식
 };
 
 // ── 첨부파일 문자열 파싱 유틸 ──────────────────────────────────
@@ -374,6 +376,53 @@ export function parseAttachments(raw: string): Attachment[] {
 
 export function attachmentDownloadUrl(boardId: string, att: Attachment): string {
   return `${API_BASE}/api/boards/${boardId}/attachments/${att.stored}?name=${encodeURIComponent(att.name)}`;
+}
+
+export function attachmentPreviewUrl(boardId: string, att: Attachment): string {
+  // name을 함께 넘겨서 백엔드가 hwp/hwpx→PDF 변환 시 실제 문서명을 PDF의 /Title
+  // 메타데이터로 심어줄 수 있게 한다(다운로드 라우트와 동일한 관례).
+  return `${API_BASE}/api/boards/${boardId}/attachments/${att.stored}/preview?name=${encodeURIComponent(att.name)}`;
+}
+
+// ── 첨부파일 미리보기 (인증 헤더 포함, 새 탭에서 브라우저 내장 뷰어로 열기) ──
+// pdf는 즉시, hwp/hwpx는 서버가 PDF로 변환한 뒤(첫 열람만 몇 초 소요) 새 탭에서 연다.
+// 비동기로 fetch를 먼저 하고 나중에 window.open을 부르면 팝업 차단에 걸리기 쉬워서,
+// 클릭 이벤트 안에서 동기적으로 빈 탭을 먼저 열어둔 뒤 그 탭의 주소를 채워 넣는다.
+export async function previewAttachment(boardId: string, att: Attachment): Promise<void> {
+  const newTab = window.open("", "_blank");
+  try {
+    const res = await fetch(attachmentPreviewUrl(boardId, att), {
+      headers: { "x-app-password": getPassword() },
+    });
+    if (!res.ok) {
+      let message = "미리보기를 생성할 수 없습니다. 다운로드해서 확인해주세요.";
+      try {
+        const body = await res.json();
+        if (body?.error) message = body.error;
+      } catch { /* 무시 */ }
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    // Blob을 그냥 URL.createObjectURL()에 넘기면 크롬 PDF 뷰어 좌측 상단에 파일명 대신
+    // blob URL의 임시 내부 식별자(무의미한 UUID)가 뜬다 — blob에는 원래 파일명 정보가
+    // 없기 때문. File 객체로 감싸서 이름을 함께 넘기면 뷰어가 그 이름을 표시해준다.
+    // 변환된 hwp/hwpx는 이제 실제로 PDF이므로, 확장자도 원본(.hwp/.hwpx)이 아니라
+    // .pdf로 바꿔서 보여준다.
+    const isPdf = blob.type === "application/pdf";
+    const displayName = isPdf && !/\.pdf$/i.test(att.name)
+      ? `${att.name.replace(/\.[^./]+$/, "")}.pdf`
+      : att.name;
+    const file = new File([blob], displayName, { type: blob.type || "application/octet-stream" });
+    const objectUrl = URL.createObjectURL(file);
+    if (newTab) {
+      newTab.location.href = objectUrl;
+    } else {
+      window.open(objectUrl, "_blank");
+    }
+  } catch (e) {
+    newTab?.close();
+    throw e;
+  }
 }
 
 // ── 첨부파일 다운로드 (인증 헤더 포함, Blob 방식) ──────────────
@@ -465,7 +514,7 @@ export async function getPost(boardId: string, postId: string): Promise<Post> {
   return res.json();
 }
 
-// ── 게시글 작성 (첨부파일 최대 3개, multipart/form-data) ───────
+// ── 게시글 작성 (첨부파일 최대 5개, multipart/form-data) ───────
 export async function createPost(boardId: string, input: {
   title: string;
   content: string;
@@ -480,7 +529,7 @@ export async function createPost(boardId: string, input: {
   if (input.thumbnail) fd.append("thumbnail", input.thumbnail);
   if (input.url) fd.append("url", input.url);
   if (input.sourceName) fd.append("sourceName", input.sourceName);
-  (input.files || []).slice(0, 3).forEach(f => fd.append("files", f));
+  (input.files || []).slice(0, 5).forEach(f => fd.append("files", f));
 
   const res = await fetch(`${API_BASE}/api/boards/${boardId}/posts`, {
     method: "POST",
@@ -508,7 +557,7 @@ export async function updatePost(boardId: string, postId: string, input: {
   if (input.url !== undefined) fd.append("url", input.url);
   if (input.sourceName !== undefined) fd.append("sourceName", input.sourceName);
   if (input.keepAttachmentsRaw !== undefined) fd.append("keepAttachments", input.keepAttachmentsRaw);
-  (input.newFiles || []).slice(0, 3).forEach(f => fd.append("files", f));
+  (input.newFiles || []).slice(0, 5).forEach(f => fd.append("files", f));
 
   const res = await fetch(`${API_BASE}/api/boards/${boardId}/posts/${postId}`, {
     method: "PATCH",
@@ -616,5 +665,106 @@ export async function getCrawlLogs(boardId: string): Promise<CrawlLog[]> {
     headers: { "x-app-password": getPassword() },
   });
   if (!res.ok) throw new Error("실행 이력 조회 실패");
+  return res.json();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 나라장터 사전규격 자동 수집(크롤링) 규칙 API
+// ══════════════════════════════════════════════════════════════
+
+export type G2bSearchScope = "title" | "title_attach";
+
+// "" = 전체(필터 없음), "Y" = SW사업 대상만, "N" = SW사업 대상 아님만
+export type G2bSwBizObjYn = "" | "Y" | "N";
+
+export type G2bCrawlRule = {
+  id: string;
+  boardId: string;
+  enabled: boolean;
+  keywords: string[];
+  searchScope: G2bSearchScope;
+  bizTypes: string[]; // ["일반용역", "기술용역"]
+  swBizObjYn: G2bSwBizObjYn;
+  hour: number;
+  minute: number;
+  lastRunAt: string | null;
+  createdAt: string;
+};
+
+export type G2bCrawlLog = {
+  id: string;
+  ruleId: string;
+  ranAt: string;
+  status: "success" | "failed";
+  collected: number;
+  duplicates: number;
+  titleMatched: number;
+  attachMatched: number;
+  errorMsg: string | null;
+};
+
+export async function getG2bRule(boardId: string): Promise<G2bCrawlRule | null> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/g2b-rule`, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("나라장터 규칙 조회 실패");
+  return res.json();
+}
+
+export async function saveG2bRule(boardId: string, input: {
+  enabled: boolean;
+  keywords: string[];
+  searchScope: G2bSearchScope;
+  bizTypes: string[];
+  swBizObjYn: G2bSwBizObjYn;
+  hour: number;
+  minute: number;
+}): Promise<G2bCrawlRule> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/g2b-rule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-app-password": getPassword() },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("나라장터 규칙 저장 실패");
+  return res.json();
+}
+
+export async function deleteG2bRule(boardId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/g2b-rule`, {
+    method: "DELETE",
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("나라장터 규칙 삭제 실패");
+}
+
+export async function runG2bNow(boardId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/g2b-rule/run-now`, {
+    method: "POST",
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("즉시 실행 실패");
+}
+
+export async function getG2bLogs(boardId: string): Promise<G2bCrawlLog[]> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/g2b-logs`, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("실행 이력 조회 실패");
+  return res.json();
+}
+
+export type G2bRunProgress = {
+  phase: "fetching" | "processing";
+  total: number;
+  done: number;
+  collected: number;
+  startedAt: number;
+};
+
+export async function getG2bStatus(boardId: string): Promise<{ running: boolean; progress: G2bRunProgress | null }> {
+  const res = await fetch(`${API_BASE}/api/boards/${boardId}/g2b-rule/status`, {
+    headers: { "x-app-password": getPassword() },
+  });
+  if (!res.ok) throw new Error("상태 조회 실패");
   return res.json();
 }

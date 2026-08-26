@@ -1,0 +1,84 @@
+# 로컬(Rocky Linux WSL2)에서 워커 10개를 띄우는 compose 파일.
+# Windows 쪽 Node 서버(server.js)에서는
+# HWP_WORKER_URLS=http://localhost:4101,http://localhost:4102,http://localhost:4103,http://localhost:4104,http://localhost:4105,http://localhost:4106,http://localhost:4107,http://localhost:4108,http://localhost:4109,http://localhost:4110
+# 로 접근하면 된다 (WSL2의 localhost 포워딩 덕분에 Windows에서 바로 접근 가능).
+services:
+  hwp-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4101:4100"
+
+  hwp-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4102:4100"
+
+  hwp-worker-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4103:4100"
+
+  hwp-worker-4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4104:4100"
+
+  hwp-worker-5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4105:4100"
+
+  hwp-worker-6:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4106:4100"
+
+  hwp-worker-7:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4107:4100"
+
+  hwp-worker-8:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4108:4100"
+
+  hwp-worker-9:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4109:4100"
+
+  hwp-worker-10:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4110:4100"
