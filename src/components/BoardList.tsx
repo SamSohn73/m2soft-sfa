@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { getPosts, deletePost, isAdmin, parseAttachments, type Board, type Post } from "@/lib/store";
-import { Plus, Trash2, Edit2, Eye, Paperclip } from "lucide-react";
+import { Plus, Trash2, Edit2, Eye, Paperclip, Settings, Bot } from "lucide-react";
 import { BoardWrite } from "./BoardWrite";
 import { BoardPostView } from "./BoardPostView";
 import { Pagination } from "./Pagination";
+import { G2bCrawlSettingsModal } from "./G2bCrawlSettingsModal";
 
 export function BoardList({ board }: { board: Board }) {
   const [posts, setPosts] = useState<Post[]>([]);
@@ -12,6 +13,7 @@ export function BoardList({ board }: { board: Board }) {
   const [editing, setEditing] = useState<Post | null>(null);
   const [viewing, setViewing] = useState<Post | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showG2bSettings, setShowG2bSettings] = useState(false);
   const PAGE_SIZE = 20;
   const admin = isAdmin();
   const canWrite = admin || board.allowWrite === "all";
@@ -67,14 +69,24 @@ export function BoardList({ board }: { board: Board }) {
             총 {posts.length}개의 게시글
           </p>
         </div>
-        {canWrite && (
-          <button
-            onClick={() => setWriting(true)}
-            className="h-9 px-4 rounded-lg gradient-brand text-primary-foreground text-sm font-semibold flex items-center gap-1.5 hover:opacity-90 transition"
-          >
-            <Plus className="h-4 w-4" /> 글쓰기
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {admin && (
+            <button
+              onClick={() => setShowG2bSettings(true)}
+              className="h-9 px-3 rounded-lg border border-border hover:bg-accent transition text-sm font-medium flex items-center gap-1.5"
+            >
+              <Settings className="h-3.5 w-3.5" /> 자동수집
+            </button>
+          )}
+          {canWrite && (
+            <button
+              onClick={() => setWriting(true)}
+              className="h-9 px-4 rounded-lg gradient-brand text-primary-foreground text-sm font-semibold flex items-center gap-1.5 hover:opacity-90 transition"
+            >
+              <Plus className="h-4 w-4" /> 글쓰기
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -116,6 +128,15 @@ export function BoardList({ board }: { board: Board }) {
                     <td className="px-4 py-3 text-muted-foreground text-center">{posts.length - ((currentPage - 1) * PAGE_SIZE) - i}</td>
                     <td className="px-4 py-3 font-medium truncate max-w-0">
                       <span className="flex items-center gap-1.5">
+                        {admin && post.isAutoCollected === "true" && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[10px] text-brand bg-brand/10 px-1.5 py-0.5 rounded shrink-0"
+                            title={post.matchedKeyword ? `키워드: ${post.matchedKeyword}` : undefined}
+                          >
+                            <Bot className="h-2.5 w-2.5" />
+                            {post.g2bMatchType === "attach" ? "첨부매칭" : post.g2bMatchType === "title" ? "제목매칭" : "자동수집"}
+                          </span>
+                        )}
                         <span className="truncate">{post.title}</span>
                         {attCount > 0 && (
                           <Paperclip className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -151,6 +172,10 @@ export function BoardList({ board }: { board: Board }) {
       </div>
       {posts.length > 0 && (
         <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+      )}
+
+      {showG2bSettings && (
+        <G2bCrawlSettingsModal boardId={board.id} onClose={() => setShowG2bSettings(false)} />
       )}
     </div>
   );
