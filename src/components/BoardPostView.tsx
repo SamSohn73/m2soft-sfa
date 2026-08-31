@@ -109,7 +109,7 @@ export function BoardPostView({
                     {/* 문서명 영역 클릭 = 미리보기(새 탭, 브라우저 내장 뷰어) */}
                     <button
                       type="button"
-                      onClick={() => previewAttachment(board.id, att).catch((e) => alert(e?.message || "미리보기에 실패했습니다"))}
+                      onClick={() => previewAttachment(board.id, att)}
                       className="flex-1 min-w-0 flex items-center gap-3 text-left"
                       title="미리보기"
                     >

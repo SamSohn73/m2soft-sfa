@@ -380,49 +380,21 @@ export function attachmentDownloadUrl(boardId: string, att: Attachment): string 
 
 export function attachmentPreviewUrl(boardId: string, att: Attachment): string {
   // name을 함께 넘겨서 백엔드가 hwp/hwpx→PDF 변환 시 실제 문서명을 PDF의 /Title
-  // 메타데이터로 심어줄 수 있게 한다(다운로드 라우트와 동일한 관례).
-  return `${API_BASE}/api/boards/${boardId}/attachments/${att.stored}/preview?name=${encodeURIComponent(att.name)}`;
+  // 메타데이터 및 Content-Disposition 파일명으로 심어줄 수 있게 한다(다운로드
+  // 라우트와 동일한 관례). pwd도 쿼리로 함께 넘기는 이유는 아래 previewAttachment
+  // 주석 참고.
+  return `${API_BASE}/api/boards/${boardId}/attachments/${att.stored}/preview` +
+    `?name=${encodeURIComponent(att.name)}&pwd=${encodeURIComponent(getPassword())}`;
 }
 
-// ── 첨부파일 미리보기 (인증 헤더 포함, 새 탭에서 브라우저 내장 뷰어로 열기) ──
-// pdf는 즉시, hwp/hwpx는 서버가 PDF로 변환한 뒤(첫 열람만 몇 초 소요) 새 탭에서 연다.
-// 비동기로 fetch를 먼저 하고 나중에 window.open을 부르면 팝업 차단에 걸리기 쉬워서,
-// 클릭 이벤트 안에서 동기적으로 빈 탭을 먼저 열어둔 뒤 그 탭의 주소를 채워 넣는다.
-export async function previewAttachment(boardId: string, att: Attachment): Promise<void> {
-  const newTab = window.open("", "_blank");
-  try {
-    const res = await fetch(attachmentPreviewUrl(boardId, att), {
-      headers: { "x-app-password": getPassword() },
-    });
-    if (!res.ok) {
-      let message = "미리보기를 생성할 수 없습니다. 다운로드해서 확인해주세요.";
-      try {
-        const body = await res.json();
-        if (body?.error) message = body.error;
-      } catch { /* 무시 */ }
-      throw new Error(message);
-    }
-    const blob = await res.blob();
-    // Blob을 그냥 URL.createObjectURL()에 넘기면 크롬 PDF 뷰어 좌측 상단에 파일명 대신
-    // blob URL의 임시 내부 식별자(무의미한 UUID)가 뜬다 — blob에는 원래 파일명 정보가
-    // 없기 때문. File 객체로 감싸서 이름을 함께 넘기면 뷰어가 그 이름을 표시해준다.
-    // 변환된 hwp/hwpx는 이제 실제로 PDF이므로, 확장자도 원본(.hwp/.hwpx)이 아니라
-    // .pdf로 바꿔서 보여준다.
-    const isPdf = blob.type === "application/pdf";
-    const displayName = isPdf && !/\.pdf$/i.test(att.name)
-      ? `${att.name.replace(/\.[^./]+$/, "")}.pdf`
-      : att.name;
-    const file = new File([blob], displayName, { type: blob.type || "application/octet-stream" });
-    const objectUrl = URL.createObjectURL(file);
-    if (newTab) {
-      newTab.location.href = objectUrl;
-    } else {
-      window.open(objectUrl, "_blank");
-    }
-  } catch (e) {
-    newTab?.close();
-    throw e;
-  }
+// ── 첨부파일 미리보기 (새 탭에서 브라우저 내장 뷰어로 바로 열기) ──
+// 예전엔 fetch()로 받아서 Blob→File→URL.createObjectURL()로 열었는데, iPad(모바일)
+// Safari에서 "undefined is not a function (near '...value of readableStream...')"
+// 오류로 미리보기가 깨지는 문제가 있었다. 지금은 백엔드가 쿼리 파라미터 인증(pwd)과
+// Content-Disposition의 filename을 직접 내려주므로, fetch/Blob 없이 URL을 새 탭에서
+// 그대로 열면 된다 — 더 단순하고 모든 브라우저(iPad Safari 포함)에서 안정적이다.
+export function previewAttachment(boardId: string, att: Attachment): void {
+  window.open(attachmentPreviewUrl(boardId, att), "_blank");
 }
 
 // ── 첨부파일 다운로드 (인증 헤더 포함, Blob 방식) ──────────────

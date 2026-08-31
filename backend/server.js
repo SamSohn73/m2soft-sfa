@@ -1136,8 +1136,20 @@ const PREVIEW_CACHE_DIRNAME = ".preview_cache";
 const PREVIEW_PDF_EXTS = new Set(["pdf", "hwp", "hwpx"]);
 const PREVIEW_INLINE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "txt"]);
 
-app.get("/api/boards/:boardId/attachments/:storedName/preview", requirePassword, async (req, res) => {
+// iPad(모바일) Safari에서 fetch()로 받아 Blob→File→URL.createObjectURL로 여는 예전 방식이
+// "undefined is not a function (near '...value of readableStream...')" 오류로 깨지는 문제가
+// 있었다(WebKit의 fetch body 스트리밍 관련 버그로 추정). 그래서 이 라우트는 브라우저가 URL을
+// 새 탭에서 직접 열도록 바꿨고, 그러려면 커스텀 헤더(x-app-password)를 못 쓰므로 쿼리
+// 파라미터 인증도 함께 허용한다 (/api/files/:id 라우트가 Range 요청 지원을 위해 이미 쓰고
+// 있는 것과 동일한 패턴 — requirePassword 미들웨어를 쓰지 않고 이 라우트에서만 인라인 처리).
+app.get("/api/boards/:boardId/attachments/:storedName/preview", async (req, res) => {
   try {
+    const pwd = req.header("x-app-password") || req.query.pwd;
+    const auth = teamForPassword(pwd);
+    if (!auth) return res.status(401).json({ error: "unauthorized" });
+    req.team = auth.team;
+    req.role = auth.role;
+
     const { boardId, storedName } = req.params;
     const { name } = req.query; // 원본 파일명 (표시용, 인코딩됨) - 다운로드 라우트와 동일한 관례
     const filePath = path.join(POST_ATTACH_DIR, boardId, storedName);
@@ -1146,6 +1158,11 @@ app.get("/api/boards/:boardId/attachments/:storedName/preview", requirePassword,
     }
     const ext = (storedName.toLowerCase().match(/\.([a-z0-9]+)$/) || [])[1] || "";
     const displayName = name ? decodeURIComponent(String(name)) : storedName;
+    // hwp/hwpx는 변환되어 실제로 PDF가 되므로, 브라우저에 보여줄 파일명도 확장자를
+    // .pdf로 바꿔서 내려준다 (예전엔 프론트가 Blob을 File로 감싸며 처리하던 부분).
+    const previewFileName = PREVIEW_PDF_EXTS.has(ext) && ext !== "pdf"
+      ? `${displayName.replace(/\.[^./]+$/, "")}.pdf`
+      : displayName;
 
     if (PREVIEW_PDF_EXTS.has(ext)) {
       const cacheDir = path.join(POST_ATTACH_DIR, boardId, PREVIEW_CACHE_DIRNAME);
@@ -1168,7 +1185,7 @@ app.get("/api/boards/:boardId/attachments/:storedName/preview", requirePassword,
         fs.writeFileSync(cachePath, pdfBuf);
       }
       res.type("pdf");
-      res.set("Content-Disposition", "inline");
+      res.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(previewFileName)}`);
       return fs.createReadStream(cachePath).pipe(res);
     }
 
@@ -1176,7 +1193,7 @@ app.get("/api/boards/:boardId/attachments/:storedName/preview", requirePassword,
       return res.status(415).json({ error: "미리보기를 지원하지 않는 파일 형식입니다. 다운로드해주세요." });
     }
     res.type(ext);
-    res.set("Content-Disposition", "inline");
+    res.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(previewFileName)}`);
     return fs.createReadStream(filePath).pipe(res);
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
