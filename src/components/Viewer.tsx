@@ -52,6 +52,11 @@ function PdfJsViewer({ url, onReady, onFatalError }: { url: string; onReady: (c:
   const viewerRef = useRef<HTMLDivElement>(null);
   const renderTaskRef = useRef<any>(null);
   const thumbCanvasesRef = useRef<Map<number, string>>(new Map());
+  // onFatalError를 매 렌더마다 새로 만들어 넘기는 호출부(Viewer)가 있어도
+  // 아래 PDF 로딩 useEffect가 그것 때문에 재실행되지 않도록 ref로 최신값만
+  // 따로 보관해서 참조한다 (effect의 deps에는 이 ref를 넣지 않음).
+  const onFatalErrorRef = useRef(onFatalError);
+  onFatalErrorRef.current = onFatalError;
 
   // 스와이프 감지용
   const swipeTouchStartX = useRef<number | null>(null);
@@ -176,17 +181,19 @@ function PdfJsViewer({ url, onReady, onFatalError }: { url: string; onReady: (c:
         // pdf.js 로딩 자체가 깨지면(예: 위 오류가 그래도 재발하는 환경) 에러 화면에서
         // 막히지 않도록, 상위(Viewer)에 알려서 브라우저 기본 뷰어(iframe)로 자동
         // 전환한다 — "기본" 토글 버튼을 수동으로 눌러야 했던 것을 자동화한 것.
-        if (onFatalError) { onFatalError(); return; }
+        if (onFatalErrorRef.current) { onFatalErrorRef.current(); return; }
         setError("PDF를 불러올 수 없습니다. (" + (e?.message || e) + ")"); setLoading(false);
       }
     }).catch(() => {
       if (cancelled) return;
-      if (onFatalError) { onFatalError(); return; }
+      if (onFatalErrorRef.current) { onFatalErrorRef.current(); return; }
       setError("PDF 뷰어를 불러올 수 없습니다."); setLoading(false);
     });
 
     return () => { cancelled = true; };
-  }, [url, onFatalError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onFatalError는 매 렌더 새
+    // 함수여도 위 onFatalErrorRef로만 참조하므로 재실행 트리거가 될 필요가 없다.
+  }, [url]);
 
   // PDF 로드 후 초기 스케일 계산
   useEffect(() => {
