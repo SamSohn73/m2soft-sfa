@@ -44,7 +44,7 @@ type PdfControls = {
   toggleFullscreen: () => void; isFullscreen: boolean;
 };
 
-function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) => void }) {
+function PdfJsViewer({ url, onReady, onFatalError }: { url: string; onReady: (c: PdfControls) => void; onFatalError?: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
@@ -151,7 +151,14 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
       lib.GlobalWorkerOptions.workerSrc = ws.default;
 
       try {
-        const doc = await lib.getDocument({ url }).promise;
+        // disableStream/disableRange: pdf.js의 기본 fetch+ReadableStream 기반 네트워크
+        // 레이어(PDFFetchStream)가 iPad(모바일) Safari에서 "undefined is not a function
+        // (near '...value of readableStream...')" 오류로 깨지는 문제가 있어(WebKit
+        // ReadableStream 관련 버그로 추정), XHR 기반의 구식(하지만 안정적인) 전체
+        // 다운로드 방식으로 강제 전환한다. 문서를 통째로 받은 뒤 렌더링을 시작하므로
+        // 매우 큰 PDF에서는 첫 페이지가 뜨기까지 약간 더 걸릴 수 있지만, 지금 다루는
+        // 문서 크기(사업 제안서 등)에서는 체감상 차이가 거의 없다.
+        const doc = await lib.getDocument({ url, disableStream: true, disableRange: true }).promise;
         if (cancelled) return;
         setPdf(doc);
         setTotalPages(doc.numPages);
@@ -165,12 +172,21 @@ function PdfJsViewer({ url, onReady }: { url: string; onReady: (c: PdfControls) 
         }
         if (!cancelled) setAllPageTexts(texts);
       } catch (e: any) {
-        if (!cancelled) { setError("PDF를 불러올 수 없습니다. (" + (e?.message || e) + ")"); setLoading(false); }
+        if (cancelled) return;
+        // pdf.js 로딩 자체가 깨지면(예: 위 오류가 그래도 재발하는 환경) 에러 화면에서
+        // 막히지 않도록, 상위(Viewer)에 알려서 브라우저 기본 뷰어(iframe)로 자동
+        // 전환한다 — "기본" 토글 버튼을 수동으로 눌러야 했던 것을 자동화한 것.
+        if (onFatalError) { onFatalError(); return; }
+        setError("PDF를 불러올 수 없습니다. (" + (e?.message || e) + ")"); setLoading(false);
       }
-    }).catch(() => { if (!cancelled) { setError("PDF 뷰어를 불러올 수 없습니다."); setLoading(false); } });
+    }).catch(() => {
+      if (cancelled) return;
+      if (onFatalError) { onFatalError(); return; }
+      setError("PDF 뷰어를 불러올 수 없습니다."); setLoading(false);
+    });
 
     return () => { cancelled = true; };
-  }, [url]);
+  }, [url, onFatalError]);
 
   // PDF 로드 후 초기 스케일 계산
   useEffect(() => {
@@ -666,7 +682,7 @@ export function Viewer({ presentation }: { presentation: Presentation | null }) 
       </div>
 
       <div className="flex-1 min-h-0 bg-content">
-        {showPdfJs ? <PdfJsViewer url={presentation.src} onReady={setPdfControls} /> : <ViewerBody kind={kind} url={url} presentation={presentation} />}
+        {showPdfJs ? <PdfJsViewer url={presentation.src} onReady={setPdfControls} onFatalError={() => setUsePdfJs(false)} /> : <ViewerBody kind={kind} url={url} presentation={presentation} />}
       </div>
     </div>
   );
